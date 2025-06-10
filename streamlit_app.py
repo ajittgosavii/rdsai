@@ -275,6 +275,13 @@ def initialize_firebase():
                 st.error("Firebase configuration could not be loaded or parsed. Please check your secrets.toml format.")
                 return None, None, None
 
+            # IMPORTANT: Ensure the 'type' field is set to 'service_account'
+            # This handles cases where the secret might be missing this field or have a different value.
+            if 'type' not in firebase_config_dict or firebase_config_dict['type'] != 'service_account':
+                firebase_config_dict['type'] = 'service_account'
+                st.warning("Added/corrected 'type': 'service_account' to Firebase config. "
+                           "Consider adding this directly to your Streamlit secrets for clarity.")
+
             # Initialize Firebase Admin SDK with service account credentials
             # credentials.Certificate expects a dictionary matching the JSON structure
             cred = credentials.Certificate(firebase_config_dict)
