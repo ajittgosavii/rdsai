@@ -30,7 +30,7 @@ except ImportError as e:
 st.set_page_config(
     page_title="Enterprise AWS RDS Migration & Sizing Tool",
     layout="wide",
-    page_icon="�",
+    page_icon="🚀",
     initial_sidebar_state="expanded"
 )
 
@@ -243,6 +243,7 @@ if 'is_logged_in' not in st.session_state:
 @st.cache_resource(ttl=3600) # Cache for 1 hour
 def initialize_firebase():
     """Initializes the Firebase app and authenticates the user."""
+    temp_key_file = None # Initialize to None for cleanup
     try:
         # Check if Firebase is already initialized
         if not firebase_admin._apps:
@@ -282,16 +283,32 @@ def initialize_firebase():
                 st.warning("Added/corrected 'type': 'service_account' to Firebase config. "
                            "Consider adding this directly to your Streamlit secrets for clarity.")
 
-            # Crucial: Replace escaped newlines in the private_key to ensure proper PEM parsing
+            # Robust handling of private_key: Write to a temporary file
             if 'private_key' in firebase_config_dict and isinstance(firebase_config_dict['private_key'], str):
-                # Replace explicit '\\n' with actual newline characters '\n'
-                firebase_config_dict['private_key'] = firebase_config_dict['private_key'].replace('\\n', '\n')
-                st.info("Replaced escaped newlines in private_key for Firebase initialization.")
+                try:
+                    # Create a temporary file to store the private key
+                    # Using NamedTemporaryFile ensures it's cleaned up automatically
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as f:
+                        # Replace explicit '\\n' with actual newline characters '\n'
+                        # This handles cases where the key might be stored as a single string with literal \n escapes
+                        private_key_content = firebase_config_dict['private_key'].replace('\\n', '\n')
+                        f.write(private_key_content)
+                        temp_key_file = f.name # Store file path for credentials.Certificate
 
-            # Initialize Firebase Admin SDK with service account credentials
-            # credentials.Certificate expects a dictionary matching the JSON structure
-            cred = credentials.Certificate(firebase_config_dict)
-            
+                    cred = credentials.Certificate(temp_key_file) # Initialize with file path
+                    st.info(f"Using temporary file for private key: {temp_key_file}")
+
+                except Exception as temp_e:
+                    st.error(f"Error creating temporary key file: {temp_e}")
+                    # Fallback to direct dict if temp file creation fails, though it's less reliable
+                    cred = credentials.Certificate(firebase_config_dict)
+                    st.warning("Falling back to direct dictionary for credentials. "
+                               "Temporary file creation failed, which may lead to PEM parsing issues.")
+            else:
+                # Fallback if private_key is missing or not a string
+                st.warning("Private key not found or not a string in Firebase config. Attempting direct dictionary initialization.")
+                cred = credentials.Certificate(firebase_config_dict)
+
             # Use the project_id from the loaded config
             firebase_app = firebase_admin.initialize_app(cred, options={'projectId': firebase_config_dict['project_id']})
             
@@ -306,16 +323,19 @@ def initialize_firebase():
             st.success(f"Firebase Admin SDK initialized successfully!")
             
             return firebase_app, auth_client, db_client
-        else:
-            # If already initialized, retrieve existing instances
-            firebase_app = firebase_admin.get_app()
-            auth_client = auth.get_auth(firebase_app)
-            db_client = firestore.client(firebase_app)
-            return firebase_app, auth_client, db_client
 
     except Exception as e:
         st.error(f"Failed to initialize Firebase: {e}")
         return None, None, None
+    finally:
+        # Clean up the temporary file if it was created
+        if temp_key_file and os.path.exists(temp_key_file):
+            try:
+                os.remove(temp_key_file)
+                st.info(f"Cleaned up temporary key file: {temp_key_file}")
+            except Exception as cleanup_e:
+                st.warning(f"Failed to clean up temporary key file {temp_key_file}: {cleanup_e}")
+
 
 # Initialize Firebase and store in session state
 if st.session_state.firebase_app is None:
