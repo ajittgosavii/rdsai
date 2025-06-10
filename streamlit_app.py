@@ -292,6 +292,14 @@ def initialize_firebase():
                         # Replace explicit '\\n' with actual newline characters '\n'
                         # This handles cases where the key might be stored as a single string with literal \n escapes
                         private_key_content = firebase_config_dict['private_key'].replace('\\n', '\n')
+                        
+                        # Ensure the private key has the correct PEM header and footer
+                        # This is crucial for the cryptography library to parse it correctly
+                        if not private_key_content.startswith('-----BEGIN PRIVATE KEY-----'):
+                            private_key_content = '-----BEGIN PRIVATE KEY-----\n' + private_key_content
+                        if not private_key_content.endswith('\n-----END PRIVATE KEY-----'):
+                            private_key_content = private_key_content + '\n-----END PRIVATE KEY-----'
+                            
                         f.write(private_key_content)
                         temp_key_file = f.name # Store file path for credentials.Certificate
 
