@@ -247,7 +247,7 @@ def initialize_firebase():
         # Check if Firebase is already initialized
         if not firebase_admin._apps:
             
-            # --- IMPORTANT: Changes for Streamlit Cloud Secrets ---
+            firebase_config = None
             # Try to load Firebase config from Streamlit secrets
             if "connections" in st.secrets and "firebase" in st.secrets["connections"]:
                 firebase_config = st.secrets["connections"]["firebase"]
@@ -257,41 +257,38 @@ def initialize_firebase():
                          "with your service account key details.")
                 return None, None, None
 
+            # --- IMPORTANT: New parsing logic for Streamlit Cloud Secrets ---
+            # If firebase_config is a string (due to how it's saved in secrets.toml), parse it as JSON
+            if isinstance(firebase_config, str):
+                try:
+                    # Attempt to load it as JSON. This handles cases where the entire JSON is
+                    # put into a single string key in secrets.toml.
+                    firebase_config_dict = json.loads(firebase_config)
+                except json.JSONDecodeError as e:
+                    st.error(f"Error parsing Firebase secret JSON: {e}. "
+                             f"Please ensure the 'private_key' is correctly multi-lined with triple quotes "
+                             f"and other values are simple key=value pairs, OR the entire JSON is a valid single string.")
+                    return None, None, None
+            elif isinstance(firebase_config, dict):
+                # If it's already a dictionary (the ideal scenario for secrets.toml structure), use it directly.
+                firebase_config_dict = firebase_config
+            else:
+                st.error(f"Unexpected type for Firebase configuration: {type(firebase_config)}. Expected str or dict.")
+                return None, None, None
+
+
             # Initialize Firebase Admin SDK with service account credentials
             # credentials.Certificate expects a dictionary matching the JSON structure
-            cred = credentials.Certificate(firebase_config)
+            cred = credentials.Certificate(firebase_config_dict)
             
             # Use the project_id from the loaded config
-            firebase_app = firebase_admin.initialize_app(cred, options={'projectId': firebase_config['project_id']})
+            firebase_app = firebase_admin.initialize_app(cred, options={'projectId': firebase_config_dict['project_id']})
             
             # Get auth and firestore instances
             auth_client = auth.get_auth(firebase_app)
             db_client = firestore.client(firebase_app)
             
-            # --- IMPORTANT: Authentication for Streamlit Cloud ---
-            # For Streamlit Cloud, direct Google OAuth pop-up is not straightforward.
-            # If you want user-specific data, you'd typically handle auth client-side
-            # and pass an ID token to your backend, or use Firebase's client SDK
-            # in a custom component.
-            # For basic identity tracking, you might rely on a fixed user or
-            # generate a simple UUID for anonymous users if no real auth is in place.
-            # For now, we'll indicate if authenticated, but real user auth (Google Sign-In)
-            # would require a more complex setup not directly within this Python file.
-            
-            # Since Streamlit Cloud doesn't provide __initial_auth_token like Canvas,
-            # we'll assume a single user for now or an anonymous user if no custom auth is implemented.
-            # For a real multi-user app on Streamlit Cloud with Google Sign-In,
-            # you'd need a client-side solution (e.g., JS component, or a proxy backend).
-            
-            # Here, we'll try to get an existing user if any, or mark as not logged in.
-            # If you implement actual client-side Google auth, you'd verify ID tokens here.
-            
-            # Placeholder for user identification on Streamlit Cloud:
-            # For Canvas, __initial_auth_token exists. For Streamlit Cloud, it doesn't.
-            # If your app needs user-specific data persistence, you'd build a login flow.
-            # For now, we'll just indicate "Firebase initialized".
-            
-            # This app currently does not implement a full Google Sign-In flow for Streamlit Cloud.
+            # For Streamlit Cloud, specific Google Sign-In needs custom client-side implementation.
             # The 'is_logged_in' state will reflect whether Firebase Admin SDK successfully initialized.
             st.session_state.user_id = "firebase_admin_user" # Placeholder user ID for Admin SDK operations
             st.session_state.user_email = "admin@example.com" # Placeholder email
