@@ -246,52 +246,59 @@ def initialize_firebase():
     try:
         # Check if Firebase is already initialized
         if not firebase_admin._apps:
-            # Access global variables provided by the Canvas environment
-            app_id = os.environ.get('__app_id', 'default-app-id')
-            firebase_config_str = os.environ.get('__firebase_config')
-            initial_auth_token = os.environ.get('__initial_auth_token')
-
-            if not firebase_config_str:
-                st.error("Firebase configuration not found. Cannot initialize Firebase.")
+            
+            # --- IMPORTANT: Changes for Streamlit Cloud Secrets ---
+            # Try to load Firebase config from Streamlit secrets
+            if "connections" in st.secrets and "firebase" in st.secrets["connections"]:
+                firebase_config = st.secrets["connections"]["firebase"]
+            else:
+                st.error("Firebase configuration not found in Streamlit secrets. "
+                         "Please ensure you have a [connections.firebase] section in .streamlit/secrets.toml "
+                         "with your service account key details.")
                 return None, None, None
 
-            firebase_config = json.loads(firebase_config_str)
+            # Initialize Firebase Admin SDK with service account credentials
+            # credentials.Certificate expects a dictionary matching the JSON structure
+            cred = credentials.Certificate(firebase_config)
             
-            # Use a dummy credential as we are using custom token / anonymous auth
-            cred = credentials.Certificate({
-                "projectId": firebase_config['projectId'],
-                "private_key": "dummy-key", # Not used for actual auth, but required by SDK
-                "client_email": "dummy-email" # Not used for actual auth, but required by SDK
-            })
-            
-            firebase_app = firebase_admin.initialize_app(cred, options=firebase_config)
+            # Use the project_id from the loaded config
+            firebase_app = firebase_admin.initialize_app(cred, options={'projectId': firebase_config['project_id']})
             
             # Get auth and firestore instances
             auth_client = auth.get_auth(firebase_app)
             db_client = firestore.client(firebase_app)
             
-            # Authenticate with custom token if provided by Canvas, otherwise anonymously
-            try:
-                if initial_auth_token:
-                    user = auth_client.sign_in_with_custom_token(initial_auth_token)
-                    st.session_state.user_id = user.uid
-                    st.session_state.user_email = user.email # This might be None for some custom tokens
-                    st.session_state.is_logged_in = True
-                    st.success(f"Logged in as: {st.session_state.user_id}")
-                else:
-                    user = auth_client.sign_in_anonymously()
-                    st.session_state.user_id = user.uid
-                    st.session_state.user_email = "Anonymous"
-                    st.session_state.is_logged_in = True
-                    st.info(f"Signed in anonymously with ID: {st.session_state.user_id}")
+            # --- IMPORTANT: Authentication for Streamlit Cloud ---
+            # For Streamlit Cloud, direct Google OAuth pop-up is not straightforward.
+            # If you want user-specific data, you'd typically handle auth client-side
+            # and pass an ID token to your backend, or use Firebase's client SDK
+            # in a custom component.
+            # For basic identity tracking, you might rely on a fixed user or
+            # generate a simple UUID for anonymous users if no real auth is in place.
+            # For now, we'll indicate if authenticated, but real user auth (Google Sign-In)
+            # would require a more complex setup not directly within this Python file.
+            
+            # Since Streamlit Cloud doesn't provide __initial_auth_token like Canvas,
+            # we'll assume a single user for now or an anonymous user if no custom auth is implemented.
+            # For a real multi-user app on Streamlit Cloud with Google Sign-In,
+            # you'd need a client-side solution (e.g., JS component, or a proxy backend).
+            
+            # Here, we'll try to get an existing user if any, or mark as not logged in.
+            # If you implement actual client-side Google auth, you'd verify ID tokens here.
+            
+            # Placeholder for user identification on Streamlit Cloud:
+            # For Canvas, __initial_auth_token exists. For Streamlit Cloud, it doesn't.
+            # If your app needs user-specific data persistence, you'd build a login flow.
+            # For now, we'll just indicate "Firebase initialized".
+            
+            # This app currently does not implement a full Google Sign-In flow for Streamlit Cloud.
+            # The 'is_logged_in' state will reflect whether Firebase Admin SDK successfully initialized.
+            st.session_state.user_id = "firebase_admin_user" # Placeholder user ID for Admin SDK operations
+            st.session_state.user_email = "admin@example.com" # Placeholder email
+            st.session_state.is_logged_in = True # Indicates Admin SDK is ready
 
-            except Exception as auth_e:
-                st.error(f"Firebase Authentication Error: {auth_e}")
-                st.session_state.is_logged_in = False
-                st.session_state.user_id = None
-                st.session_state.user_email = None
-                return None, None, None # Return None if auth fails
-
+            st.success(f"Firebase Admin SDK initialized successfully!")
+            
             return firebase_app, auth_client, db_client
         else:
             # If already initialized, retrieve existing instances
@@ -633,23 +640,11 @@ st.markdown("---")
 # Display User Authentication Status
 st.sidebar.subheader("User Authentication")
 if st.session_state.is_logged_in:
-    st.sidebar.success(f"Logged in as: {st.session_state.user_email or st.session_state.user_id}")
-    st.sidebar.markdown(f"**User ID:** `{st.session_state.user_id}`")
-    # For now, sign-out is not explicitly supported by the Canvas auth mechanism for custom token,
-    # but a button can be provided if a full auth flow is implemented in future.
-    # if st.sidebar.button("Sign Out"):
-    #     auth.get_auth(st.session_state.firebase_app).sign_out()
-    #     st.session_state.is_logged_in = False
-    #     st.session_state.user_id = None
-    #     st.session_state.user_email = None
-    #     st.rerun()
+    st.sidebar.success(f"Firebase Admin SDK Initialized. User ID: `{st.session_state.user_id}`")
+    # For Streamlit Cloud, specific Google Sign-In needs custom client-side implementation.
+    # The current setup only indicates the Admin SDK is ready to make server-side calls to Firebase.
 else:
-    st.sidebar.warning("Not logged in. Functionality may be limited.")
-    # No explicit sign-in button needed here as Canvas handles initial auth token.
-    # if st.sidebar.button("Sign In with Google"):
-    #     # This would typically trigger a redirect or popup for OAuth flow
-    #     # which is complex in Streamlit.
-    #     st.warning("Google Sign-In is managed by the Canvas environment. Please ensure you are logged into your Google account for full features.")
+    st.sidebar.warning("Firebase Admin SDK not initialized.")
 
 st.markdown("---") # Visual separator after auth status
 
@@ -1144,7 +1139,7 @@ with tab3:
                     <div><strong>CPU:</strong> {server_spec['cores']} cores</div>
                     <div><strong>RAM:</strong> {server_spec['ram']}GB</div>
                     <div><strong>Storage:</strong> {server_spec['storage']}GB</div>
-                    <div><strong>IOPS:</strong> {server_spec['max_iops']:,}</div>
+                    <div><strong>IOPS:</strong> {max_iops:,}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
