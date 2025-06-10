@@ -30,7 +30,7 @@ except ImportError as e:
 st.set_page_config(
     page_title="Enterprise AWS RDS Migration & Sizing Tool",
     layout="wide",
-    page_icon="🚀",
+    page_icon="�",
     initial_sidebar_state="expanded"
 )
 
@@ -281,6 +281,12 @@ def initialize_firebase():
                 firebase_config_dict['type'] = 'service_account'
                 st.warning("Added/corrected 'type': 'service_account' to Firebase config. "
                            "Consider adding this directly to your Streamlit secrets for clarity.")
+
+            # Crucial: Replace escaped newlines in the private_key to ensure proper PEM parsing
+            if 'private_key' in firebase_config_dict and isinstance(firebase_config_dict['private_key'], str):
+                # Replace explicit '\\n' with actual newline characters '\n'
+                firebase_config_dict['private_key'] = firebase_config_dict['private_key'].replace('\\n', '\n')
+                st.info("Replaced escaped newlines in private_key for Firebase initialization.")
 
             # Initialize Firebase Admin SDK with service account credentials
             # credentials.Certificate expects a dictionary matching the JSON structure
