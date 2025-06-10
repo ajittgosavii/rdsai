@@ -247,35 +247,34 @@ def initialize_firebase():
         # Check if Firebase is already initialized
         if not firebase_admin._apps:
             
-            firebase_config = None
+            firebase_config_raw = None
             # Try to load Firebase config from Streamlit secrets
             if "connections" in st.secrets and "firebase" in st.secrets["connections"]:
-                firebase_config = st.secrets["connections"]["firebase"]
+                firebase_config_raw = st.secrets["connections"]["firebase"]
             else:
                 st.error("Firebase configuration not found in Streamlit secrets. "
                          "Please ensure you have a [connections.firebase] section in .streamlit/secrets.toml "
                          "with your service account key details.")
                 return None, None, None
 
-            # --- IMPORTANT: New parsing logic for Streamlit Cloud Secrets ---
-            # If firebase_config is a string (due to how it's saved in secrets.toml), parse it as JSON
-            if isinstance(firebase_config, str):
+            firebase_config_dict = None
+            # If firebase_config_raw is a string, it means the user might have put the entire JSON as one string value.
+            if isinstance(firebase_config_raw, str):
                 try:
-                    # Attempt to load it as JSON. This handles cases where the entire JSON is
-                    # put into a single string key in secrets.toml.
-                    firebase_config_dict = json.loads(firebase_config)
+                    firebase_config_dict = json.loads(firebase_config_raw)
                 except json.JSONDecodeError as e:
-                    st.error(f"Error parsing Firebase secret JSON: {e}. "
-                             f"Please ensure the 'private_key' is correctly multi-lined with triple quotes "
-                             f"and other values are simple key=value pairs, OR the entire JSON is a valid single string.")
+                    st.error(f"Error parsing Firebase secret JSON string: {e}. "
+                             f"Please ensure the entire JSON secret is a valid string if stored as one value.")
                     return None, None, None
-            elif isinstance(firebase_config, dict):
-                # If it's already a dictionary (the ideal scenario for secrets.toml structure), use it directly.
-                firebase_config_dict = firebase_config
             else:
-                st.error(f"Unexpected type for Firebase configuration: {type(firebase_config)}. Expected str or dict.")
-                return None, None, None
+                # If it's not a string, it should be a dict-like object (like AttrDict from Streamlit secrets)
+                # which behaves like a dictionary. We can directly use it.
+                firebase_config_dict = firebase_config_raw
 
+            # If after the above, firebase_config_dict is still None, something went wrong.
+            if firebase_config_dict is None:
+                st.error("Firebase configuration could not be loaded or parsed. Please check your secrets.toml format.")
+                return None, None, None
 
             # Initialize Firebase Admin SDK with service account credentials
             # credentials.Certificate expects a dictionary matching the JSON structure
@@ -288,8 +287,6 @@ def initialize_firebase():
             auth_client = auth.get_auth(firebase_app)
             db_client = firestore.client(firebase_app)
             
-            # For Streamlit Cloud, specific Google Sign-In needs custom client-side implementation.
-            # The 'is_logged_in' state will reflect whether Firebase Admin SDK successfully initialized.
             st.session_state.user_id = "firebase_admin_user" # Placeholder user ID for Admin SDK operations
             st.session_state.user_email = "admin@example.com" # Placeholder email
             st.session_state.is_logged_in = True # Indicates Admin SDK is ready
