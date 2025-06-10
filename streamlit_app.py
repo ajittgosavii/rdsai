@@ -271,12 +271,17 @@ def initialize_firebase():
                     st.error(f"Error parsing Firebase secret JSON string: {e}. "
                              f"Please ensure the entire JSON secret for 'connections.firebase' is a valid string if stored as one value.")
                     return None, None, None
-            elif isinstance(firebase_config_raw, dict): # Streamlit secrets often load multi-line TOML sections as dicts directly
-                # If it's already a dict (from multi-line TOML), use it directly
-                firebase_config_dict = firebase_config_raw
+            # Handle dictionary-like objects (like Streamlit's AttrDict) by converting them to a regular dict
+            elif hasattr(firebase_config_raw, 'keys') and hasattr(firebase_config_raw, '__getitem__'):
+                try:
+                    firebase_config_dict = dict(firebase_config_raw)
+                except Exception as e:
+                    st.error(f"Error converting Firebase secret from dict-like object: {e}. "
+                             "Please ensure 'connections.firebase' in secrets.toml is correctly formatted.")
+                    return None, None, None
             else:
                 st.error(f"Unexpected type for Firebase secret 'connections.firebase': {type(firebase_config_raw)}. "
-                         "Expected string (JSON) or dictionary (from TOML multi-line).")
+                         "Expected string (JSON) or dictionary-like structure from TOML multi-line.")
                 return None, None, None
 
             # If firebase_config_dict is still None, something went wrong.
@@ -320,6 +325,7 @@ def initialize_firebase():
                 except Exception as temp_e:
                     st.error(f"Error handling private key or creating temporary file: {temp_e}")
                     st.warning("Attempting fallback: Initializing Firebase with dictionary directly (less robust).")
+                    # Fallback to direct dict if temp file creation fails, though it's less reliable
                     cred = credentials.Certificate(firebase_config_dict)
             else:
                 st.error("Firebase 'private_key' not found or not a string. Cannot initialize Firebase.")
@@ -1049,7 +1055,8 @@ with tab2:
                     label="📥 Download CSV Template",
                     data=csv_template,
                     file_name="server_specifications_template.csv",
-                    mime="text/csv"
+                    mime="text/csv",
+                    use_container_width=True
                 )
             
             # Process uploaded file
