@@ -259,21 +259,29 @@ def initialize_firebase():
                 return None, None, None
 
             firebase_config_dict = None
-            # If firebase_config_raw is a string, it means the user might have put the entire JSON as one string value.
             if isinstance(firebase_config_raw, str):
+                # If it's a string, it must be a JSON string. Try to load it.
+                if not firebase_config_raw.strip(): # Check if it's empty or just whitespace
+                    st.error("Firebase secret 'connections.firebase' is an empty or whitespace-only string. "
+                             "Please provide valid JSON content for your service account.")
+                    return None, None, None
                 try:
                     firebase_config_dict = json.loads(firebase_config_raw)
                 except json.JSONDecodeError as e:
                     st.error(f"Error parsing Firebase secret JSON string: {e}. "
-                             f"Please ensure the entire JSON secret is a valid string if stored as one value.")
+                             f"Please ensure the entire JSON secret for 'connections.firebase' is a valid string if stored as one value.")
                     return None, None, None
+            elif isinstance(firebase_config_raw, dict): # Streamlit secrets often load multi-line TOML sections as dicts directly
+                # If it's already a dict (from multi-line TOML), use it directly
+                firebase_config_dict = firebase_config_raw
             else:
-                # If it's not a string (i.e., it's an AttrDict), convert it to a regular dict
-                firebase_config_dict = dict(firebase_config_raw)
+                st.error(f"Unexpected type for Firebase secret 'connections.firebase': {type(firebase_config_raw)}. "
+                         "Expected string (JSON) or dictionary (from TOML multi-line).")
+                return None, None, None
 
-            # If after the above, firebase_config_dict is still None, something went wrong.
+            # If firebase_config_dict is still None, something went wrong.
             if firebase_config_dict is None:
-                st.error("Firebase configuration could not be loaded or parsed. Please check your secrets.toml format.")
+                st.error("Firebase configuration could not be loaded or parsed. Please check your secrets.toml format for 'connections.firebase'.")
                 return None, None, None
 
             # IMPORTANT: Ensure the 'type' field is set to 'service_account'
@@ -286,36 +294,36 @@ def initialize_firebase():
             # Robust handling of private_key: Write to a temporary file
             if 'private_key' in firebase_config_dict and isinstance(firebase_config_dict['private_key'], str):
                 try:
-                    # Create a temporary file to store the private key
-                    # Using NamedTemporaryFile ensures it's cleaned up automatically
+                    # Replace explicit '\\n' with actual newline characters '\n'
+                    raw_private_key = firebase_config_dict['private_key'].replace('\\n', '\n').strip()
+                    
+                    # Ensure proper PEM formatting with headers and footers
+                    # Remove any existing headers/footers to re-apply correctly
+                    raw_private_key = raw_private_key.replace('-----BEGIN PRIVATE KEY-----', '')
+                    raw_private_key = raw_private_key.replace('-----END PRIVATE KEY-----', '')
+                    raw_private_key = raw_private_key.strip() # Strip again after removing markers
+
+                    # Construct the final PEM content
+                    final_pem_content = (
+                        "-----BEGIN PRIVATE KEY-----\n" +
+                        raw_private_key + "\n" +
+                        "-----END PRIVATE KEY-----\n"
+                    )
+
                     with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as f:
-                        # Replace explicit '\\n' with actual newline characters '\n'
-                        # This handles cases where the key might be stored as a single string with literal \n escapes
-                        private_key_content = firebase_config_dict['private_key'].replace('\\n', '\n')
-                        
-                        # Ensure the private key has the correct PEM header and footer
-                        # This is crucial for the cryptography library to parse it correctly
-                        if not private_key_content.startswith('-----BEGIN PRIVATE KEY-----'):
-                            private_key_content = '-----BEGIN PRIVATE KEY-----\n' + private_key_content
-                        if not private_key_content.endswith('\n-----END PRIVATE KEY-----'):
-                            private_key_content = private_key_content + '\n-----END PRIVATE KEY-----'
-                            
-                        f.write(private_key_content)
+                        f.write(final_pem_content)
                         temp_key_file = f.name # Store file path for credentials.Certificate
 
                     cred = credentials.Certificate(temp_key_file) # Initialize with file path
                     st.info(f"Using temporary file for private key: {temp_key_file}")
 
                 except Exception as temp_e:
-                    st.error(f"Error creating temporary key file: {temp_e}")
-                    # Fallback to direct dict if temp file creation fails, though it's less reliable
+                    st.error(f"Error handling private key or creating temporary file: {temp_e}")
+                    st.warning("Attempting fallback: Initializing Firebase with dictionary directly (less robust).")
                     cred = credentials.Certificate(firebase_config_dict)
-                    st.warning("Falling back to direct dictionary for credentials. "
-                               "Temporary file creation failed, which may lead to PEM parsing issues.")
             else:
-                # Fallback if private_key is missing or not a string
-                st.warning("Private key not found or not a string in Firebase config. Attempting direct dictionary initialization.")
-                cred = credentials.Certificate(firebase_config_dict)
+                st.error("Firebase 'private_key' not found or not a string. Cannot initialize Firebase.")
+                return None, None, None
 
             # Use the project_id from the loaded config
             firebase_app = firebase_admin.initialize_app(cred, options={'projectId': firebase_config_dict['project_id']})
