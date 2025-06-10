@@ -171,7 +171,7 @@ st.markdown("""
         border: 2px dashed #007bff;
         border-radius: 8px;
         padding: 2rem;
-        text-align: center;
+        text_align: center;
         background: #f8f9ff;
         margin: 1rem 0;
     }
@@ -267,9 +267,8 @@ def initialize_firebase():
                              f"Please ensure the entire JSON secret is a valid string if stored as one value.")
                     return None, None, None
             else:
-                # If it's not a string, it should be a dict-like object (like AttrDict from Streamlit secrets)
-                # which behaves like a dictionary. We can directly use it.
-                firebase_config_dict = firebase_config_raw
+                # If it's not a string (i.e., it's an AttrDict), convert it to a regular dict
+                firebase_config_dict = dict(firebase_config_raw)
 
             # If after the above, firebase_config_dict is still None, something went wrong.
             if firebase_config_dict is None:
