@@ -259,7 +259,15 @@ def initialize_firebase():
                 return None, None, None
 
             firebase_config_dict = None
-            if isinstance(firebase_config_raw, str):
+            # Handle dictionary-like objects (like Streamlit's AttrDict) by converting them to a regular dict
+            if hasattr(firebase_config_raw, 'keys') and hasattr(firebase_config_raw, '__getitem__'):
+                try:
+                    firebase_config_dict = dict(firebase_config_raw)
+                except Exception as e:
+                    st.error(f"Error converting Firebase secret from dict-like object: {e}. "
+                             "Please ensure 'connections.firebase' in secrets.toml is correctly formatted.")
+                    return None, None, None
+            elif isinstance(firebase_config_raw, str):
                 # If it's a string, it must be a JSON string. Try to load it.
                 if not firebase_config_raw.strip(): # Check if it's empty or just whitespace
                     st.error("Firebase secret 'connections.firebase' is an empty or whitespace-only string. "
@@ -270,14 +278,6 @@ def initialize_firebase():
                 except json.JSONDecodeError as e:
                     st.error(f"Error parsing Firebase secret JSON string: {e}. "
                              f"Please ensure the entire JSON secret for 'connections.firebase' is a valid string if stored as one value.")
-                    return None, None, None
-            # Handle dictionary-like objects (like Streamlit's AttrDict) by converting them to a regular dict
-            elif hasattr(firebase_config_raw, 'keys') and hasattr(firebase_config_raw, '__getitem__'):
-                try:
-                    firebase_config_dict = dict(firebase_config_raw)
-                except Exception as e:
-                    st.error(f"Error converting Firebase secret from dict-like object: {e}. "
-                             "Please ensure 'connections.firebase' in secrets.toml is correctly formatted.")
                     return None, None, None
             else:
                 st.error(f"Unexpected type for Firebase secret 'connections.firebase': {type(firebase_config_raw)}. "
@@ -297,26 +297,32 @@ def initialize_firebase():
                            "Consider adding this directly to your Streamlit secrets for clarity.")
 
             # Robust handling of private_key: Write to a temporary file
+            # The Firebase Admin SDK's `credentials.Certificate` prefers a path to a JSON file
+            # or a dictionary where the 'private_key' field contains actual newline characters '\n'.
+            # If the secret is stored as a multi-line string in secrets.toml (using triple quotes),
+            # Streamlit often loads it with correct newlines. If it's a single-line escaped string,
+            # then replace('\\n', '\n') is necessary.
             if 'private_key' in firebase_config_dict and isinstance(firebase_config_dict['private_key'], str):
                 try:
-                    # Replace explicit '\\n' with actual newline characters '\n'
+                    # Replace explicit '\\n' with actual newline characters '\n' and strip whitespace
                     raw_private_key = firebase_config_dict['private_key'].replace('\\n', '\n').strip()
                     
-                    # Ensure proper PEM formatting with headers and footers
-                    # Remove any existing headers/footers to re-apply correctly
-                    raw_private_key = raw_private_key.replace('-----BEGIN PRIVATE KEY-----', '')
-                    raw_private_key = raw_private_key.replace('-----END PRIVATE KEY-----', '')
-                    raw_private_key = raw_private_key.strip() # Strip again after removing markers
+                    # Ensure it has BEGIN/END headers. Only add if not already present.
+                    # This prevents double-adding headers or stripping valid ones.
+                    if not raw_private_key.startswith('-----BEGIN PRIVATE KEY-----'):
+                        raw_private_key = "-----BEGIN PRIVATE KEY-----\n" + raw_private_key
+                    if not raw_private_key.endswith('-----END PRIVATE KEY-----'):
+                        raw_private_key = raw_private_key + "\n-----END PRIVATE KEY-----"
+                    
+                    # Ensure a final newline after the content and before the end tag if not present
+                    if not raw_private_key.endswith('\n-----END PRIVATE KEY-----'):
+                        raw_private_key = raw_private_key.replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----')
 
-                    # Construct the final PEM content
-                    final_pem_content = (
-                        "-----BEGIN PRIVATE KEY-----\n" +
-                        raw_private_key + "\n" +
-                        "-----END PRIVATE KEY-----\n"
-                    )
 
+                    # Now, write the correctly formatted private key to a temporary file
+                    # The Firebase Admin SDK's `credentials.Certificate` functions best with a file path.
                     with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as f:
-                        f.write(final_pem_content)
+                        f.write(raw_private_key) # Write the entire PEM string
                         temp_key_file = f.name # Store file path for credentials.Certificate
 
                     cred = credentials.Certificate(temp_key_file) # Initialize with file path
@@ -325,7 +331,9 @@ def initialize_firebase():
                 except Exception as temp_e:
                     st.error(f"Error handling private key or creating temporary file: {temp_e}")
                     st.warning("Attempting fallback: Initializing Firebase with dictionary directly (less robust).")
-                    # Fallback to direct dict if temp file creation fails, though it's less reliable
+                    # Fallback to direct dict if temp file creation fails.
+                    # Ensure private_key in dict is also correctly formatted with real newlines.
+                    firebase_config_dict['private_key'] = firebase_config_dict['private_key'].replace('\\n', '\n')
                     cred = credentials.Certificate(firebase_config_dict)
             else:
                 st.error("Firebase 'private_key' not found or not a string. Cannot initialize Firebase.")
