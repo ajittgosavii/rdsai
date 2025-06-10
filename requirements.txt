@@ -11,3 +11,4 @@ boto3>=1.28.0
 matplotlib>=3.0.0
 seaborn>=0.11.0
 reportlab
+firebase-admin
