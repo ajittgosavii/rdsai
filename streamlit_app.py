@@ -9,13 +9,17 @@ import asyncio
 import traceback
 import json
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from typing import Dict, Any, Optional
 from io import BytesIO
 import tempfile
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
+
+# Authentication imports
+import bcrypt
+import jwt
 
 # Import our enhanced modules
 try:
@@ -33,6 +37,232 @@ st.set_page_config(
     page_icon="🚀",
     initial_sidebar_state="expanded"
 )
+
+# ================================
+# AUTHENTICATION FUNCTIONS
+# ================================
+
+def hash_password(password: str) -> str:
+    """Hash a password for storing."""
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    """Verify a stored password against one provided by user"""
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def get_users_from_secrets():
+    """Get users from Streamlit secrets"""
+    try:
+        if "auth" in st.secrets and "users" in st.secrets["auth"]:
+            return dict(st.secrets["auth"]["users"])
+        return {}
+    except Exception as e:
+        st.error(f"Error loading users: {e}")
+        return {}
+
+def authenticate_user(email: str, password: str) -> dict:
+    """Authenticate user credentials"""
+    users = get_users_from_secrets()
+    
+    for username, user_data in users.items():
+        user_dict = dict(user_data)
+        if user_dict.get('email', '').lower() == email.lower():
+            if verify_password(password, user_dict['password']):
+                return {
+                    'username': username,
+                    'email': user_dict['email'],
+                    'name': user_dict['name'],
+                    'role': user_dict['role'],
+                    'authenticated': True
+                }
+    return {'authenticated': False}
+
+def create_session_token(user_data: dict) -> str:
+    """Create a JWT session token"""
+    try:
+        config = dict(st.secrets["auth"]["config"])
+        payload = {
+            'username': user_data['username'],
+            'email': user_data['email'],
+            'name': user_data['name'],
+            'role': user_data['role'],
+            'exp': datetime.utcnow() + timedelta(days=int(config.get('cookie_expiry_days', 7)))
+        }
+        return jwt.encode(payload, config['cookie_key'], algorithm='HS256')
+    except Exception as e:
+        st.error(f"Error creating session token: {e}")
+        return None
+
+def verify_session_token(token: str) -> dict:
+    """Verify and decode session token"""
+    try:
+        config = dict(st.secrets["auth"]["config"])
+        payload = jwt.decode(token, config['cookie_key'], algorithms=['HS256'])
+        return {
+            'username': payload['username'],
+            'email': payload['email'],
+            'name': payload['name'],
+            'role': payload['role'],
+            'authenticated': True
+        }
+    except jwt.ExpiredSignatureError:
+        return {'authenticated': False, 'error': 'Session expired'}
+    except jwt.InvalidTokenError:
+        return {'authenticated': False, 'error': 'Invalid session'}
+
+def show_login_form():
+    """Display the login form"""
+    st.markdown("""
+    <div style="max-width: 400px; margin: 50px auto; padding: 30px; 
+                border: 1px solid #ddd; border-radius: 10px; 
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+    """, unsafe_allow_html=True)
+    
+    st.markdown("### 🔐 Enterprise RDS Migration Tool - Login")
+    st.markdown("Please enter your credentials to access the system.")
+    
+    with st.form("login_form"):
+        email = st.text_input("📧 Email", placeholder="user@yourcompany.com")
+        password = st.text_input("🔒 Password", type="password", placeholder="Enter your password")
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            login_button = st.form_submit_button("🚀 Login", use_container_width=True)
+        with col2:
+            # Show available test users (remove this in production)
+            if st.form_submit_button("👥 Show Test Users", use_container_width=True):
+                st.session_state.show_test_users = True
+    
+    if login_button:
+        if email and password:
+            with st.spinner("Authenticating..."):
+                user_data = authenticate_user(email, password)
+                
+                if user_data['authenticated']:
+                    # Create session token
+                    token = create_session_token(user_data)
+                    if token:
+                        # Store in session state
+                        st.session_state.user_authenticated = True
+                        st.session_state.user_data = user_data
+                        st.session_state.session_token = token
+                        st.session_state.user_id = user_data['username']
+                        st.session_state.user_email = user_data['email']
+                        st.session_state.is_logged_in = True
+                        
+                        st.success(f"✅ Welcome, {user_data['name']}!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Error creating session. Please try again.")
+                else:
+                    st.error("❌ Invalid email or password. Please try again.")
+        else:
+            st.error("❌ Please enter both email and password.")
+    
+    # Show test users for development (remove in production)
+    if st.session_state.get('show_test_users', False):
+        st.markdown("---")
+        st.markdown("#### 👥 Test Users (Development Only)")
+        users = get_users_from_secrets()
+        for username, user_data in users.items():
+            user_dict = dict(user_data)
+            st.markdown(f"**{user_dict['name']}** ({user_dict['role']})")
+            st.code(f"Email: {user_dict['email']}")
+        st.markdown("*Passwords are set in secrets.toml*")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def logout_user():
+    """Logout the current user"""
+    # Clear all authentication-related session state
+    auth_keys = [
+        'user_authenticated', 'user_data', 'session_token', 
+        'user_id', 'user_email', 'is_logged_in'
+    ]
+    for key in auth_keys:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    st.success("👋 You have been logged out successfully!")
+    st.rerun()
+
+def check_authentication():
+    """Check if user is authenticated and handle session"""
+    # Initialize authentication state
+    if 'user_authenticated' not in st.session_state:
+        st.session_state.user_authenticated = False
+    
+    # Check for existing session token
+    if not st.session_state.user_authenticated and 'session_token' in st.session_state:
+        token_data = verify_session_token(st.session_state.session_token)
+        if token_data['authenticated']:
+            st.session_state.user_authenticated = True
+            st.session_state.user_data = token_data
+            st.session_state.user_id = token_data['username']
+            st.session_state.user_email = token_data['email']
+            st.session_state.is_logged_in = True
+        else:
+            # Clear invalid session
+            if 'session_token' in st.session_state:
+                del st.session_state['session_token']
+    
+    return st.session_state.user_authenticated
+
+def show_user_info():
+    """Display current user info in sidebar"""
+    if st.session_state.get('user_authenticated', False) and 'user_data' in st.session_state:
+        user_data = st.session_state.user_data
+        
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 👤 Current User")
+        st.sidebar.markdown(f"**Name:** {user_data['name']}")
+        st.sidebar.markdown(f"**Email:** {user_data['email']}")
+        st.sidebar.markdown(f"**Role:** {user_data['role'].title()}")
+        
+        if st.sidebar.button("🚪 Logout", use_container_width=True):
+            logout_user()
+
+def check_user_role(required_role: str) -> bool:
+    """Check if current user has required role"""
+    if not st.session_state.get('user_authenticated', False):
+        return False
+    
+    user_role = st.session_state.user_data.get('role', '')
+    
+    # Admin has access to everything
+    if user_role == 'admin':
+        return True
+    
+    # Check specific role
+    return user_role == required_role
+
+def generate_test_passwords():
+    """Generate hashed passwords for your users - Run this once to get hashes"""
+    test_passwords = {
+        'admin': 'AdminPass123!',
+        'analyst': 'AnalystPass456!', 
+        'manager': 'ManagerPass789!'
+    }
+    
+    st.subheader("🔑 Password Hash Generator")
+    st.markdown("Use these hashed passwords in your secrets.toml file:")
+    
+    for username, plain_password in test_passwords.items():
+        hashed = hash_password(plain_password)
+        st.code(f"{username} password: {plain_password}")
+        st.code(f"Hashed: {hashed}")
+        st.markdown("---")
+
+# ================================
+# AUTHENTICATION CHECK
+# ================================
+
+# Check authentication before showing the app
+if not check_authentication():
+    show_login_form()
+    st.stop()  # Don't show the rest of the app until authenticated
 
 # Enhanced Custom CSS for better UI
 st.markdown("""
@@ -232,12 +462,6 @@ if 'firebase_auth' not in st.session_state:
     st.session_state.firebase_auth = None
 if 'firebase_db' not in st.session_state:
     st.session_state.firebase_db = None
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = None
-if 'user_email' not in st.session_state:
-    st.session_state.user_email = None
-if 'is_logged_in' not in st.session_state:
-    st.session_state.is_logged_in = False
 
 # CORRECTED Firebase initialization function
 @st.cache_resource(ttl=3600)
@@ -290,11 +514,6 @@ def initialize_firebase():
         # Get Firestore client
         db_client = firestore.client(firebase_app)
         
-        # Set session state
-        st.session_state.user_id = "firebase_admin_user"
-        st.session_state.user_email = firebase_config_dict.get('client_email', 'admin@example.com')
-        st.session_state.is_logged_in = True
-
         st.success("🎉 Firebase Admin SDK initialized successfully!")
         
         # Return: app, auth module, firestore client
@@ -685,18 +904,25 @@ st.session_state.user_claude_api_key_input = st.text_input(
 )
 st.markdown("---")
 
-# Display User Authentication Status (CORRECTED - only one instance)
-st.sidebar.subheader("User Authentication")
-if st.session_state.is_logged_in and st.session_state.firebase_app:
-    st.sidebar.success("🔥 Firebase Admin SDK Ready")
+# Show user info in sidebar
+show_user_info()
+
+# Display System Status
+st.sidebar.subheader("System Status")
+if st.session_state.firebase_app:
+    st.sidebar.success("🔥 Firebase Connected")
     st.sidebar.write(f"**Project:** {st.session_state.firebase_app.project_id}")
-    st.sidebar.write(f"**User:** {st.session_state.user_email}")
 else:
-    st.sidebar.warning("Firebase Admin SDK not initialized.")
+    st.sidebar.warning("Firebase not connected")
 
 # Add debug button in sidebar
 if st.sidebar.button("🔧 Debug Firebase"):
     debug_firebase_config()
+
+# Add password generator for development (remove in production)
+if st.sidebar.button("🔧 Generate Password Hashes (Dev Only)"):
+    with st.sidebar.expander("Password Generator"):
+        generate_test_passwords()
 
 st.markdown("---") # Visual separator after auth status
 
@@ -1427,6 +1653,177 @@ with tab3:
                         
                         df_data = []
                         for env, result in valid_results.items():
+                            # Adapt for new structure
+                            instance_type_display = safe_get_str(result, 'instance_type', 'N/A')
+                            vcpus_display = safe_get(result, 'actual_vCPUs', 0)
+                            ram_gb_display = safe_get(result, 'actual_RAM_GB', 0)
+                            instance_cost_display = safe_get(result, 'instance_cost', 0)
+                            
+                            if 'writer' in result: # Multi-AZ structure
+                                writer_info = result['writer']
+                                instance_type_display = safe_get_str(writer_info, 'instance_type', 'N/A')
+                                vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
+                                ram_gb_display = safe_get(writer_info, 'actual_RAM_GB', 0)
+                                instance_cost_display = safe_get(writer_info, 'instance_cost', 0) # Writer instance cost
+                                if result['readers']:
+                                    for reader_info in result['readers']:
+                                        instance_cost_display += safe_get(reader_info, 'instance_cost', 0) # Add reader costs
+                                    instance_type_display += f" + {len(result['readers'])} Readers ({safe_get_str(result['readers'][0], 'instance_type', 'N/A')})"
+
+
+                            df_data.append({
+                                'Environment': env,
+                                'Instance Type': instance_type_display,
+                                'vCPUs': vcpus_display,
+                                'RAM (GB)': ram_gb_display,
+                                'Storage (GB)': safe_get(result, 'storage_GB', 0),
+                                'Instance Cost': instance_cost_display,
+                                'Storage Cost': safe_get(result, 'storage_cost', 0),
+                                'Total Monthly Cost': safe_get(result, 'total_cost', 0)
+                            })
+                        
+                        df = pd.DataFrame(df_data)
+                        csv = df.to_csv(index=False)
+                        filename = f"rds_single_recommendations_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+                    else:
+                        # Bulk server CSV export
+                        df_data = []
+                        for server_name, server_results in current_results.items():
+                            if 'error' not in server_results:
+                                result = server_results.get('PROD', list(server_results.values())[0])
+                                if 'error' not in result:
+                                    # Adapt for new structure
+                                    instance_type_display = ""
+                                    vcpus_display = 0
+                                    ram_gb_display = 0
+                                    instance_cost_display = 0
+
+                                    if 'writer' in result: # Multi-AZ structure
+                                        writer_info = result['writer']
+                                        instance_type_display = safe_get_str(writer_info, 'instance_type', 'N/A')
+                                        vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
+                                        ram_gb_display = safe_get(writer_info, 'actual_RAM_GB', 0)
+                                        instance_cost_display = safe_get(writer_info, 'instance_cost', 0)
+                                        if result['readers']:
+                                            for reader_info in result['readers']:
+                                                instance_cost_display += safe_get(reader_info, 'instance_cost', 0)
+                                            instance_type_display += f" + {len(result['readers'])} Readers"
+                                    else:
+                                        instance_type_display = safe_get_str(result, 'instance_type', 'N/A')
+                                        vcpus_display = safe_get(result, 'actual_vCPUs', 0)
+                                        ram_gb_display = safe_get(result, 'actual_RAM_GB', 0)
+                                        instance_cost_display = safe_get(result, 'instance_cost', 0)
+                                    
+                                    monthly_cost = safe_get(result, 'total_cost', 0)
+
+                                    df_data.append({
+                                        'Server Name': server_name,
+                                        'Recommended Instance': instance_type_display,
+                                        'vCPUs': vcpus_display,
+                                        'RAM (GB)': ram_gb_display,
+                                        'Storage (GB)': safe_get(result, 'storage_GB', 0),
+                                        'Instance Cost': instance_cost_display,
+                                        'Storage Cost': safe_get(result, 'storage_cost', 0),
+                                        'Total Monthly Cost': monthly_cost,
+                                        'Annual Cost': monthly_cost * 12
+                                    })
+                        
+                        df = pd.DataFrame(df_data)
+                        csv = df.to_csv(index=False)
+                        filename = f"rds_bulk_recommendations_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+                    
+                    st.download_button(
+                        label="📥 Download CSV",
+                        data=csv,
+                        file_name=filename,
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+            
+            with col2:
+                if st.button("📋 Export to JSON", use_container_width=True):
+                    export_data = {
+                        'analysis_mode': st.session_state.current_analysis_mode,
+                        'migration_config': {
+                            'source_engine': st.session_state.source_engine,
+                            'target_engine': st.session_state.target_engine,
+                            'migration_type': calculator.migration_profile.migration_type.value if calculator.migration_profile else 'unknown'
+                        },
+                        'recommendations': current_results,
+                        'ai_insights': ai_insights,
+                        'generation_time': st.session_state.get('generation_time', 0),
+                        'generated_at': datetime.now().isoformat()
+                    }
+                    
+                    if st.session_state.current_analysis_mode == 'single' and 'current_server_spec' in st.session_state:
+                        export_data['server_specification'] = st.session_state.current_server_spec
+                    elif st.session_state.current_analysis_mode == 'bulk':
+                        export_data['bulk_servers'] = st.session_state.on_prem_servers
+                    
+                    json_str = json.dumps(export_data, indent=2, default=str)
+                    
+                    report_type = "bulk" if st.session_state.current_analysis_mode == 'bulk' else "single"
+                    st.download_button(
+                        label="📥 Download JSON",
+                        data=json_str,
+                        file_name=f"rds_{report_type}_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+            
+            with col3:
+                if st.button("📈 Export Cost Summary", use_container_width=True):
+                    if st.session_state.current_analysis_mode == 'single':
+                        # Single server cost summary
+                        valid_results = {k: v for k, v in current_results.items() if 'error' not in v}
+                        
+                        summary_data = []
+                        total_cost = sum([safe_get(r, 'total_cost', 0) for r in valid_results.values()])
+                        
+                        for env, result in valid_results.items():
+                            cost_breakdown = safe_get(result, 'cost_breakdown', {})
+                            result_total_cost = safe_get(result, 'total_cost', 0)
+                            percentage = (result_total_cost / total_cost * 100) if total_cost > 0 else 0
+                            
+                            # Adapt for new structure
+                            instance_cost_summary = 0
+                            if 'writer' in result:
+                                instance_cost_summary = safe_get(cost_breakdown, 'writer_monthly', 0) + \
+                                                        safe_get(cost_breakdown, 'readers_monthly', 0)
+                            else:
+                                instance_cost_summary = safe_get(cost_breakdown, 'instance_monthly', 0)
+
+
+                            summary_data.append({
+                                'Environment': env,
+                                'Instance Cost': instance_cost_summary,
+                                'Storage Cost': safe_get(cost_breakdown, 'storage_monthly', 0),
+                                'Backup Cost': safe_get(cost_breakdown, 'backup_monthly', 0),
+                                'Features Cost': safe_get(cost_breakdown, 'features_monthly', 0),
+                                'Monthly Total': result_total_cost,
+                                'Annual Total': result_total_cost * 12,
+                                'Percentage of Total': f"{percentage:.1f}%"
+                            })
+                        
+                        filename = f"rds_single_cost_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+                    else:
+                        # Bulk cost summary
+                        summary_data = []
+                        total_monthly_cost = 0
+                        
+                        for server_name, server_results in current_results.items():
+                            if 'error' not in server_results:
+                                result = server_results.get('PROD', list(server_results.values())[0])
+                                if 'error' not in result:
+                                    monthly_cost = safe_get(result, 'total_cost', 0)
+                                    total_monthly_cost += monthly_cost
+                        
+                        for server_name, server_results in current_results.items():
+                            if 'error' not in server_results:
+                                result = server_results.get('PROD', list(server_results.values())[0])
+                                if 'error' not in result:
+                                    monthly_cost = safe_get(result, 'total_cost', 0)
+                                    percentage = (monthly_cost / total_monthly_cost * 100) if total_monthly_cost > 0 else 0
                             # Adapt for new structure
                             instance_type_display = safe_get_str(result, 'instance_type', 'N/A')
                             vcpus_display = safe_get(result, 'actual_vCPUs', 0)
