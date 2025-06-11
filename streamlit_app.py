@@ -239,133 +239,125 @@ if 'user_email' not in st.session_state:
 if 'is_logged_in' not in st.session_state:
     st.session_state.is_logged_in = False
 
-# Function to initialize Firebase
-@st.cache_resource(ttl=3600) # Cache for 1 hour
+# CORRECTED Firebase initialization function
+@st.cache_resource(ttl=3600)
 def initialize_firebase():
     """Initializes the Firebase app and authenticates the user."""
-    temp_key_file = None # Initialize to None for cleanup
     try:
         # Check if Firebase is already initialized
-        if not firebase_admin._apps:
-            
-            firebase_config_raw = None
-            # Try to load Firebase config from Streamlit secrets
-            if "connections" in st.secrets and "firebase" in st.secrets["connections"]:
-                firebase_config_raw = st.secrets["connections"]["firebase"]
-            else:
-                st.error("Firebase configuration not found in Streamlit secrets. "
-                         "Please ensure you have a [connections.firebase] section in .streamlit/secrets.toml "
-                         "with your service account key details.")
-                return None, None, None
+        if firebase_admin._apps:
+            st.info("Firebase already initialized")
+            app = firebase_admin.get_app()
+            return app, auth, firestore.client()
+        
+        # Load Firebase config from Streamlit secrets
+        if "connections" not in st.secrets or "firebase" not in st.secrets["connections"]:
+            st.error("Firebase configuration not found in Streamlit secrets.")
+            return None, None, None
 
-            firebase_config_dict = None
-            # Handle dictionary-like objects (like Streamlit's AttrDict) by converting them to a regular dict
-            if hasattr(firebase_config_raw, 'keys') and hasattr(firebase_config_raw, '__getitem__'):
-                try:
-                    firebase_config_dict = dict(firebase_config_raw)
-                except Exception as e:
-                    st.error(f"Error converting Firebase secret from dict-like object: {e}. "
-                             "Please ensure 'connections.firebase' in secrets.toml is correctly formatted.")
-                    return None, None, None
-            elif isinstance(firebase_config_raw, str):
-                # If it's a string, it must be a JSON string. Try to load it.
-                if not firebase_config_raw.strip(): # Check if it's empty or just whitespace
-                    st.error("Firebase secret 'connections.firebase' is an empty or whitespace-only string. "
-                             "Please provide valid JSON content for your service account.")
-                    return None, None, None
-                try:
-                    firebase_config_dict = json.loads(firebase_config_raw)
-                except json.JSONDecodeError as e:
-                    st.error(f"Error parsing Firebase secret JSON string: {e}. "
-                             f"Please ensure the entire JSON secret for 'connections.firebase' is a valid string if stored as one value.")
-                    return None, None, None
-            else:
-                st.error(f"Unexpected type for Firebase secret 'connections.firebase': {type(firebase_config_raw)}. "
-                         "Expected string (JSON) or dictionary-like structure from TOML multi-line.")
-                return None, None, None
+        # Convert config to dictionary
+        firebase_config_dict = dict(st.secrets["connections"]["firebase"])
+        
+        # Validate required fields
+        required_fields = ['project_id', 'private_key', 'client_email']
+        missing_fields = [field for field in required_fields if not firebase_config_dict.get(field)]
+        
+        if missing_fields:
+            st.error(f"Missing required Firebase fields: {missing_fields}")
+            return None, None, None
 
-            # If firebase_config_dict is still None, something went wrong.
-            if firebase_config_dict is None:
-                st.error("Firebase configuration could not be loaded or parsed. Please check your secrets.toml format for 'connections.firebase'.")
-                return None, None, None
+        # Set service account type
+        firebase_config_dict['type'] = 'service_account'
+        
+        # Validate private key format
+        private_key = firebase_config_dict.get('private_key', '').strip()
+        
+        if not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
+            st.error("Private key missing BEGIN header")
+            return None, None, None
+        
+        if not private_key.endswith('-----END PRIVATE KEY-----'):
+            st.error("Private key missing END footer")
+            return None, None, None
 
-            # IMPORTANT: Ensure the 'type' field is set to 'service_account'
-            # This handles cases where the secret might be missing this field or have a different value.
-            if 'type' not in firebase_config_dict or firebase_config_dict['type'] != 'service_account':
-                firebase_config_dict['type'] = 'service_account'
-                st.warning("Added/corrected 'type': 'service_account' to Firebase config. "
-                           "Consider adding this directly to your Streamlit secrets for clarity.")
+        # Initialize Firebase
+        cred = credentials.Certificate(firebase_config_dict)
+        firebase_app = firebase_admin.initialize_app(
+            cred, 
+            options={'projectId': firebase_config_dict['project_id']}
+        )
+        
+        # Get Firestore client
+        db_client = firestore.client(firebase_app)
+        
+        # Set session state
+        st.session_state.user_id = "firebase_admin_user"
+        st.session_state.user_email = firebase_config_dict.get('client_email', 'admin@example.com')
+        st.session_state.is_logged_in = True
 
-            # Robust handling of private_key: Write to a temporary file
-            # The Firebase Admin SDK's `credentials.Certificate` prefers a path to a JSON file
-            # or a dictionary where the 'private_key' field contains actual newline characters '\n'.
-            # If the secret is stored as a multi-line string in secrets.toml (using triple quotes),
-            # Streamlit often loads it with correct newlines. If it's a single-line escaped string,
-            # then replace('\\n', '\n') is necessary.
-            if 'private_key' in firebase_config_dict and isinstance(firebase_config_dict['private_key'], str):
-                try:
-                    # Replace explicit '\\n' with actual newline characters '\n' and strip whitespace
-                    raw_private_key = firebase_config_dict['private_key'].replace('\\n', '\n').strip()
-                    
-                    # Ensure it has BEGIN/END headers. Only add if not already present.
-                    # This prevents double-adding headers or stripping valid ones.
-                    if not raw_private_key.startswith('-----BEGIN PRIVATE KEY-----'):
-                        raw_private_key = "-----BEGIN PRIVATE KEY-----\n" + raw_private_key
-                    if not raw_private_key.endswith('-----END PRIVATE KEY-----'):
-                        raw_private_key = raw_private_key + "\n-----END PRIVATE KEY-----"
-                    
-                    # Ensure a final newline after the content and before the end tag if not present
-                    if not raw_private_key.endswith('\n-----END PRIVATE KEY-----'):
-                        raw_private_key = raw_private_key.replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----')
-
-
-                    # Now, write the correctly formatted private key to a temporary file
-                    # The Firebase Admin SDK's `credentials.Certificate` functions best with a file path.
-                    with tempfile.NamedTemporaryFile(mode='w', delete=False, encoding='utf-8') as f:
-                        f.write(raw_private_key) # Write the entire PEM string
-                        temp_key_file = f.name # Store file path for credentials.Certificate
-
-                    cred = credentials.Certificate(temp_key_file) # Initialize with file path
-                    st.info(f"Using temporary file for private key: {temp_key_file}")
-
-                except Exception as temp_e:
-                    st.error(f"Error handling private key or creating temporary file: {temp_e}")
-                    st.warning("Attempting fallback: Initializing Firebase with dictionary directly (less robust).")
-                    # Fallback to direct dict if temp file creation fails.
-                    # Ensure private_key in dict is also correctly formatted with real newlines.
-                    firebase_config_dict['private_key'] = firebase_config_dict['private_key'].replace('\\n', '\n')
-                    cred = credentials.Certificate(firebase_config_dict)
-            else:
-                st.error("Firebase 'private_key' not found or not a string. Cannot initialize Firebase.")
-                return None, None, None
-
-            # Use the project_id from the loaded config
-            firebase_app = firebase_admin.initialize_app(cred, options={'projectId': firebase_config_dict['project_id']})
-            
-            # Get auth and firestore instances
-            auth_client = auth.get_auth(firebase_app)
-            db_client = firestore.client(firebase_app)
-            
-            st.session_state.user_id = "firebase_admin_user" # Placeholder user ID for Admin SDK operations
-            st.session_state.user_email = "admin@example.com" # Placeholder email
-            st.session_state.is_logged_in = True # Indicates Admin SDK is ready
-
-            st.success(f"Firebase Admin SDK initialized successfully!")
-            
-            return firebase_app, auth_client, db_client
-
+        st.success("🎉 Firebase Admin SDK initialized successfully!")
+        
+        # Return: app, auth module, firestore client
+        return firebase_app, auth, db_client
+        
     except Exception as e:
-        st.error(f"Failed to initialize Firebase: {e}")
+        st.error(f"Firebase initialization failed: {e}")
+        import traceback
+        st.code(traceback.format_exc())
         return None, None, None
-    finally:
-        # Clean up the temporary file if it was created
-        if temp_key_file and os.path.exists(temp_key_file):
-            try:
-                os.remove(temp_key_file)
-                st.info(f"Cleaned up temporary key file: {temp_key_file}")
-            except Exception as cleanup_e:
-                st.warning(f"Failed to clean up temporary key file {temp_key_file}: {cleanup_e}")
 
+# Debug function for Firebase configuration
+def debug_firebase_config():
+    """Debug Firebase configuration to identify issues"""
+    st.subheader("🔧 Firebase Configuration Debug")
+    
+    try:
+        if "connections" not in st.secrets:
+            st.error("❌ No 'connections' section in secrets")
+            return
+            
+        if "firebase" not in st.secrets["connections"]:
+            st.error("❌ No 'firebase' section in connections")
+            return
+            
+        config = dict(st.secrets["connections"]["firebase"])
+        st.success("✅ Firebase config section found")
+        
+        # Check individual fields
+        required_fields = ['project_id', 'private_key', 'client_email', 'private_key_id']
+        
+        st.write("**Field validation:**")
+        
+        for field in required_fields:
+            if field in config and config[field]:
+                if field == 'private_key':
+                    key = config[field]
+                    st.write(f"✅ {field}: Present ({len(key)} characters)")
+                    st.write(f"   - Starts correctly: {key.startswith('-----BEGIN PRIVATE KEY-----')}")
+                    st.write(f"   - Ends correctly: {key.endswith('-----END PRIVATE KEY-----')}")
+                else:
+                    value = str(config[field])[:50] + "..." if len(str(config[field])) > 50 else str(config[field])
+                    st.write(f"✅ {field}: `{value}`")
+            else:
+                st.error(f"❌ {field}: Missing or empty")
+        
+        # Test credential creation
+        st.write("**Credential creation test:**")
+        try:
+            test_config = dict(config)
+            test_config['type'] = 'service_account'
+            
+            # Don't actually create credentials in test, just validate structure
+            if all(test_config.get(field) for field in required_fields):
+                st.success("✅ All required fields present for credential creation")
+            else:
+                st.error("❌ Missing required fields for credential creation")
+                
+        except Exception as test_error:
+            st.error(f"❌ Credential validation failed: {test_error}")
+    
+    except Exception as e:
+        st.error(f"❌ Debug failed: {e}")
 
 # Initialize Firebase and store in session state
 if st.session_state.firebase_app is None:
@@ -693,14 +685,18 @@ st.session_state.user_claude_api_key_input = st.text_input(
 )
 st.markdown("---")
 
-# Display User Authentication Status
+# Display User Authentication Status (CORRECTED - only one instance)
 st.sidebar.subheader("User Authentication")
-if st.session_state.is_logged_in:
-    st.sidebar.success(f"Firebase Admin SDK Initialized. User ID: `{st.session_state.user_id}`")
-    # For Streamlit Cloud, specific Google Sign-In needs custom client-side implementation.
-    # The current setup only indicates the Admin SDK is ready to make server-side calls to Firebase.
+if st.session_state.is_logged_in and st.session_state.firebase_app:
+    st.sidebar.success("🔥 Firebase Admin SDK Ready")
+    st.sidebar.write(f"**Project:** {st.session_state.firebase_app.project_id}")
+    st.sidebar.write(f"**User:** {st.session_state.user_email}")
 else:
     st.sidebar.warning("Firebase Admin SDK not initialized.")
+
+# Add debug button in sidebar
+if st.sidebar.button("🔧 Debug Firebase"):
+    debug_firebase_config()
 
 st.markdown("---") # Visual separator after auth status
 
@@ -1196,7 +1192,7 @@ with tab3:
                     <div><strong>CPU:</strong> {server_spec['cores']} cores</div>
                     <div><strong>RAM:</strong> {server_spec['ram']}GB</div>
                     <div><strong>Storage:</strong> {server_spec['storage']}GB</div>
-                    <div><strong>IOPS:</strong> {max_iops:,}</div>
+                    <div><strong>IOPS:</strong> {server_spec['max_iops']:,}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
