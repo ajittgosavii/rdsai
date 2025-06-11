@@ -131,7 +131,6 @@ def show_login_form():
         with col1:
             login_button = st.form_submit_button("🚀 Login", use_container_width=True)
         with col2:
-            # Show available test users (remove this in production)
             if st.form_submit_button("👥 Show Test Users", use_container_width=True):
                 st.session_state.show_test_users = True
     
@@ -141,10 +140,8 @@ def show_login_form():
                 user_data = authenticate_user(email, password)
                 
                 if user_data['authenticated']:
-                    # Create session token
                     token = create_session_token(user_data)
                     if token:
-                        # Store in session state
                         st.session_state.user_authenticated = True
                         st.session_state.user_data = user_data
                         st.session_state.session_token = token
@@ -161,7 +158,6 @@ def show_login_form():
         else:
             st.error("❌ Please enter both email and password.")
     
-    # Show test users for development (remove in production)
     if st.session_state.get('show_test_users', False):
         st.markdown("---")
         st.markdown("#### 👥 Test Users (Development Only)")
@@ -176,7 +172,6 @@ def show_login_form():
 
 def logout_user():
     """Logout the current user"""
-    # Clear all authentication-related session state
     auth_keys = [
         'user_authenticated', 'user_data', 'session_token', 
         'user_id', 'user_email', 'is_logged_in'
@@ -190,11 +185,9 @@ def logout_user():
 
 def check_authentication():
     """Check if user is authenticated and handle session"""
-    # Initialize authentication state
     if 'user_authenticated' not in st.session_state:
         st.session_state.user_authenticated = False
     
-    # Check for existing session token
     if not st.session_state.user_authenticated and 'session_token' in st.session_state:
         token_data = verify_session_token(st.session_state.session_token)
         if token_data['authenticated']:
@@ -204,7 +197,6 @@ def check_authentication():
             st.session_state.user_email = token_data['email']
             st.session_state.is_logged_in = True
         else:
-            # Clear invalid session
             if 'session_token' in st.session_state:
                 del st.session_state['session_token']
     
@@ -224,47 +216,315 @@ def show_user_info():
         if st.sidebar.button("🚪 Logout", use_container_width=True):
             logout_user()
 
-def check_user_role(required_role: str) -> bool:
-    """Check if current user has required role"""
-    if not st.session_state.get('user_authenticated', False):
-        return False
-    
-    user_role = st.session_state.user_data.get('role', '')
-    
-    # Admin has access to everything
-    if user_role == 'admin':
-        return True
-    
-    # Check specific role
-    return user_role == required_role
+# ================================
+# FIREBASE FUNCTIONS
+# ================================
 
-def generate_test_passwords():
-    """Generate hashed passwords for your users - Run this once to get hashes"""
-    test_passwords = {
-        'admin': 'AdminPass123!',
-        'analyst': 'AnalystPass456!', 
-        'manager': 'ManagerPass789!'
-    }
-    
-    st.subheader("🔑 Password Hash Generator")
-    st.markdown("Use these hashed passwords in your secrets.toml file:")
-    
-    for username, plain_password in test_passwords.items():
-        hashed = hash_password(plain_password)
-        st.code(f"{username} password: {plain_password}")
-        st.code(f"Hashed: {hashed}")
-        st.markdown("---")
+@st.cache_resource(ttl=3600)
+def initialize_firebase():
+    """Initializes the Firebase app and authenticates the user."""
+    try:
+        if firebase_admin._apps:
+            st.info("Firebase already initialized")
+            app = firebase_admin.get_app()
+            return app, auth, firestore.client()
+        
+        if "connections" not in st.secrets or "firebase" not in st.secrets["connections"]:
+            st.error("Firebase configuration not found in Streamlit secrets.")
+            return None, None, None
+
+        firebase_config_dict = dict(st.secrets["connections"]["firebase"])
+        
+        required_fields = ['project_id', 'private_key', 'client_email']
+        missing_fields = [field for field in required_fields if not firebase_config_dict.get(field)]
+        
+        if missing_fields:
+            st.error(f"Missing required Firebase fields: {missing_fields}")
+            return None, None, None
+
+        firebase_config_dict['type'] = 'service_account'
+        
+        private_key = firebase_config_dict.get('private_key', '').strip()
+        
+        if not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
+            st.error("Private key missing BEGIN header")
+            return None, None, None
+        
+        if not private_key.endswith('-----END PRIVATE KEY-----'):
+            st.error("Private key missing END footer")
+            return None, None, None
+
+        cred = credentials.Certificate(firebase_config_dict)
+        firebase_app = firebase_admin.initialize_app(
+            cred, 
+            options={'projectId': firebase_config_dict['project_id']}
+        )
+        
+        db_client = firestore.client(firebase_app)
+        
+        st.success("🎉 Firebase Admin SDK initialized successfully!")
+        
+        return firebase_app, auth, db_client
+        
+    except Exception as e:
+        st.error(f"Firebase initialization failed: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None, None, None
 
 # ================================
-# AUTHENTICATION CHECK
+# UTILITY FUNCTIONS
+# ================================
+
+def safe_get(dictionary, key, default=0):
+    """Safely get a value from a dictionary with a default fallback"""
+    if isinstance(dictionary, dict):
+        return dictionary.get(key, default)
+    return default
+
+def safe_get_str(dictionary, key, default="N/A"):
+    """Safely get a string value from a dictionary with a default fallback"""
+    if isinstance(dictionary, dict):
+        return dictionary.get(key, default)
+    return default
+
+# ================================
+# VISUALIZATION FUNCTIONS
+# ================================
+
+def create_cost_heatmap(results):
+    """Create cost heatmap for environment comparison"""
+    if not results:
+        return None
+    
+    valid_results = {k: v for k, v in results.items() if 'error' not in v}
+    if not valid_results:
+        return None
+    
+    environments = list(valid_results.keys())
+    cost_categories = ['Instance Cost', 'Storage Cost', 'Backup Cost', 'Total Cost']
+    
+    cost_matrix = []
+    for env in environments:
+        result = valid_results[env]
+        if 'writer' in result and 'readers' in result:
+            instance_cost_sum = safe_get(result['cost_breakdown'], 'writer_monthly', 0) + \
+                                safe_get(result['cost_breakdown'], 'readers_monthly', 0)
+            storage_cost = safe_get(result['cost_breakdown'], 'storage_monthly', 0)
+            backup_cost = safe_get(result['cost_breakdown'], 'backup_monthly', 0)
+            total_cost = safe_get(result, 'total_cost', 0)
+        else:
+            cost_breakdown = safe_get(result, 'cost_breakdown', {})
+            instance_cost_sum = safe_get(cost_breakdown, 'instance_monthly', safe_get(result, 'instance_cost', 0))
+            storage_cost = safe_get(cost_breakdown, 'storage_monthly', safe_get(result, 'storage_cost', 0))
+            backup_cost = safe_get(cost_breakdown, 'backup_monthly', safe_get(result, 'storage_cost', 0) * 0.25)
+            total_cost = safe_get(result, 'total_cost', 0)
+
+        row = [instance_cost_sum, storage_cost, backup_cost, total_cost]
+        cost_matrix.append(row)
+    
+    cost_matrix = np.array(cost_matrix).T
+    
+    fig = go.Figure(data=go.Heatmap(
+        z=cost_matrix,
+        x=environments,
+        y=cost_categories,
+        colorscale='RdYlBu_r',
+        text=[[f'${cost:,.0f}' for cost in row] for row in cost_matrix],
+        texttemplate='%{text}',
+        textfont={"size": 12},
+        colorbar=dict(title="Monthly Cost ($)")
+    ))
+    
+    fig.update_layout(
+        title={
+            'text': "🔥 Cost Heatmap - All Categories vs Environments",
+            'x': 0.5,
+            'font': {'size': 16}
+        },
+        xaxis_title="Environment",
+        yaxis_title="Cost Category",
+        height=400,
+        font=dict(size=12)
+    )
+    
+    return fig
+
+def create_workload_distribution_pie(workload_chars):
+    """Create workload characteristics pie chart"""
+    if not workload_chars:
+        return None
+    
+    io_mapping = {'read_heavy': 70, 'write_heavy': 30, 'mixed': 50}
+    read_pct = io_mapping.get(workload_chars.io_pattern, 50)
+    write_pct = 100 - read_pct
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=['Read Operations', 'Write Operations'],
+        values=[read_pct, write_pct],
+        hole=.3,
+        marker_colors=['#36A2EB', '#FF6384']
+    )])
+    
+    fig.update_layout(
+        title='📊 Workload I/O Distribution',
+        height=350
+    )
+    
+    return fig
+
+def create_bulk_analysis_summary_chart(bulk_results):
+    """Create summary chart for bulk analysis results"""
+    if not bulk_results:
+        return None
+    
+    server_names = []
+    total_costs = []
+    instance_types = []
+    vcpus = []
+    ram_gb = []
+    
+    for server_name, results in bulk_results.items():
+        if 'error' not in results:
+            result = results.get('PROD', list(results.values())[0])
+            if 'error' not in result:
+                server_names.append(server_name)
+                total_costs.append(safe_get(result, 'total_cost', 0))
+                
+                if 'writer' in result:
+                    instance_types.append(safe_get_str(result['writer'], 'instance_type', 'Unknown'))
+                    vcpus.append(safe_get(result['writer'], 'actual_vCPUs', 0))
+                    ram_gb.append(safe_get(result['writer'], 'actual_RAM_GB', 0))
+                else:
+                    instance_types.append(safe_get_str(result, 'instance_type', 'Unknown'))
+                    vcpus.append(safe_get(result, 'actual_vCPUs', 0))
+                    ram_gb.append(safe_get(result, 'actual_RAM_GB', 0))
+    
+    if not server_names:
+        return None
+    
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=('Monthly Cost by Server', 'vCPUs by Server', 'RAM by Server', 'Instance Type Distribution'),
+        specs=[[{"secondary_y": False}, {"secondary_y": False}],
+               [{"secondary_y": False}, {"type": "pie"}]]
+    )
+    
+    fig.add_trace(
+        go.Bar(x=server_names, y=total_costs, name='Monthly Cost', marker_color='#1f77b4'),
+        row=1, col=1
+    )
+    
+    fig.add_trace(
+        go.Bar(x=server_names, y=vcpus, name='vCPUs', marker_color='#ff7f0e'),
+        row=1, col=2
+    )
+    
+    fig.add_trace(
+        go.Bar(x=server_names, y=ram_gb, name='RAM (GB)', marker_color='#2ca02c'),
+        row=2, col=1
+    )
+    
+    instance_counts = pd.Series(instance_types).value_counts()
+    fig.add_trace(
+        go.Pie(labels=instance_counts.index, values=instance_counts.values, name="Instance Types"),
+        row=2, col=2
+    )
+    
+    fig.update_layout(
+        title_text="📊 Bulk Analysis Summary Dashboard",
+        showlegend=False,
+        height=600
+    )
+    
+    return fig
+
+def parse_bulk_upload_file(uploaded_file):
+    """Parse bulk upload file and extract server specifications"""
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        elif uploaded_file.name.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(uploaded_file)
+        else:
+            st.error("Unsupported file format. Please upload CSV or Excel files.")
+            return None
+        
+        df.columns = df.columns.str.lower().str.strip()
+        
+        column_mapping = {
+            'server_name': ['server_name', 'servername', 'name', 'hostname', 'server'],
+            'cpu_cores': ['cpu_cores', 'cpucores', 'cores', 'cpu', 'processors'],
+            'ram_gb': ['ram_gb', 'ramgb', 'ram', 'memory', 'memory_gb'],
+            'storage_gb': ['storage_gb', 'storagegb', 'storage', 'disk', 'disk_gb'],
+            'peak_cpu_percent': ['peak_cpu_percent', 'peak_cpu', 'cpu_util', 'cpu_utilization', 'max_cpu'],
+            'peak_ram_percent': ['peak_ram_percent', 'peak_ram', 'ram_util', 'ram_utilization', 'max_memory'],
+            'max_iops': ['max_iops', 'maxiops', 'iops', 'peak_iops'],
+            'max_throughput_mbps': ['max_throughput_mbps', 'max_throughput', 'throughput', 'bandwidth'],
+            'database_engine': ['database_engine', 'db_engine', 'engine', 'database']
+        }
+        
+        mapped_columns = {}
+        for standard_name, possible_names in column_mapping.items():
+            for col in df.columns:
+                if col in possible_names:
+                    mapped_columns[standard_name] = col
+                    break
+        
+        required_columns = ['server_name', 'cpu_cores', 'ram_gb', 'storage_gb']
+        missing_columns = [col for col in required_columns if col not in mapped_columns]
+        
+        if missing_columns:
+            st.error(f"Missing required columns: {missing_columns}")
+            st.info("Required columns: Server Name, CPU Cores, RAM (GB), Storage (GB)")
+            return None
+        
+        servers = []
+        for idx, row in df.iterrows():
+            try:
+                server = {
+                    'server_name': str(row[mapped_columns['server_name']]).strip(),
+                    'cpu_cores': int(float(row[mapped_columns['cpu_cores']])),
+                    'ram_gb': int(float(row[mapped_columns['ram_gb']])),
+                    'storage_gb': int(float(row[mapped_columns['storage_gb']])),
+                    'peak_cpu_percent': int(float(row.get(mapped_columns.get('peak_cpu_percent', ''), 75))),
+                    'peak_ram_percent': int(float(row.get(mapped_columns.get('peak_ram_percent', ''), 80))),
+                    'max_iops': int(float(row.get(mapped_columns.get('max_iops', ''), 1000))),
+                    'max_throughput_mbps': int(float(row.get(mapped_columns.get('max_throughput_mbps', ''), 125))),
+                    'database_engine': str(row.get(mapped_columns.get('database_engine', ''), 'oracle-ee')).strip().lower()
+                }
+                
+                if server['cpu_cores'] <= 0 or server['ram_gb'] <= 0 or server['storage_gb'] <= 0:
+                    st.warning(f"Invalid data for server {server['server_name']} at row {idx + 1}. Skipping.")
+                    continue
+                
+                servers.append(server)
+                
+            except (ValueError, TypeError) as e:
+                st.warning(f"Error parsing row {idx + 1}: {e}. Skipping.")
+                continue
+        
+        if not servers:
+            st.error("No valid server data found in the uploaded file.")
+            return None
+        
+        st.success(f"Successfully parsed {len(servers)} servers from the uploaded file.")
+        return servers
+        
+    except Exception as e:
+        st.error(f"Error parsing file: {e}")
+        return None
+
+# ================================
+# INITIALIZATION
 # ================================
 
 # Check authentication before showing the app
 if not check_authentication():
     show_login_form()
-    st.stop()  # Don't show the rest of the app until authenticated
+    st.stop()
 
-# Enhanced Custom CSS for better UI
+# Enhanced Custom CSS
 st.markdown("""
 <style>
     .main > div {
@@ -356,14 +616,6 @@ st.markdown("""
         margin: 0.5rem 0;
     }
     
-    .cost-breakdown {
-        background: #f8f9fa;
-        border: 1px solid #dee2e6;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 1rem 0;
-    }
-    
     .chart-container {
         background: #ffffff;
         border: 1px solid #e0e0e0;
@@ -401,7 +653,7 @@ st.markdown("""
         border: 2px dashed #007bff;
         border-radius: 8px;
         padding: 2rem;
-        text_align: center;
+        text-align: center;
         background: #f8f9ff;
         margin: 1rem 0;
     }
@@ -415,19 +667,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Helper function to safely get values from results dictionary
-def safe_get(dictionary, key, default=0):
-    """Safely get a value from a dictionary with a default fallback"""
-    if isinstance(dictionary, dict):
-        return dictionary.get(key, default)
-    return default
-
-def safe_get_str(dictionary, key, default="N/A"):
-    """Safely get a string value from a dictionary with a default fallback"""
-    if isinstance(dictionary, dict):
-        return dictionary.get(key, default)
-    return default
 
 # Initialize session state
 if 'calculator' not in st.session_state:
@@ -445,7 +684,7 @@ if 'source_engine' not in st.session_state:
 if 'target_engine' not in st.session_state:
     st.session_state.target_engine = None
 if 'deployment_option' not in st.session_state:
-    st.session_state.deployment_option = "Multi-AZ" # Default to Multi-AZ
+    st.session_state.deployment_option = "Multi-AZ"
 if 'bulk_results' not in st.session_state:
     st.session_state.bulk_results = {}
 if 'on_prem_servers' not in st.session_state:
@@ -453,9 +692,7 @@ if 'on_prem_servers' not in st.session_state:
 if 'bulk_upload_data' not in st.session_state:
     st.session_state.bulk_upload_data = None
 if 'current_analysis_mode' not in st.session_state:
-    st.session_state.current_analysis_mode = 'single'  # 'single' or 'bulk'
-
-# Firebase session state variables
+    st.session_state.current_analysis_mode = 'single'
 if 'firebase_app' not in st.session_state:
     st.session_state.firebase_app = None
 if 'firebase_auth' not in st.session_state:
@@ -463,400 +700,9 @@ if 'firebase_auth' not in st.session_state:
 if 'firebase_db' not in st.session_state:
     st.session_state.firebase_db = None
 
-# CORRECTED Firebase initialization function
-@st.cache_resource(ttl=3600)
-def initialize_firebase():
-    """Initializes the Firebase app and authenticates the user."""
-    try:
-        # Check if Firebase is already initialized
-        if firebase_admin._apps:
-            st.info("Firebase already initialized")
-            app = firebase_admin.get_app()
-            return app, auth, firestore.client()
-        
-        # Load Firebase config from Streamlit secrets
-        if "connections" not in st.secrets or "firebase" not in st.secrets["connections"]:
-            st.error("Firebase configuration not found in Streamlit secrets.")
-            return None, None, None
-
-        # Convert config to dictionary
-        firebase_config_dict = dict(st.secrets["connections"]["firebase"])
-        
-        # Validate required fields
-        required_fields = ['project_id', 'private_key', 'client_email']
-        missing_fields = [field for field in required_fields if not firebase_config_dict.get(field)]
-        
-        if missing_fields:
-            st.error(f"Missing required Firebase fields: {missing_fields}")
-            return None, None, None
-
-        # Set service account type
-        firebase_config_dict['type'] = 'service_account'
-        
-        # Validate private key format
-        private_key = firebase_config_dict.get('private_key', '').strip()
-        
-        if not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
-            st.error("Private key missing BEGIN header")
-            return None, None, None
-        
-        if not private_key.endswith('-----END PRIVATE KEY-----'):
-            st.error("Private key missing END footer")
-            return None, None, None
-
-        # Initialize Firebase
-        cred = credentials.Certificate(firebase_config_dict)
-        firebase_app = firebase_admin.initialize_app(
-            cred, 
-            options={'projectId': firebase_config_dict['project_id']}
-        )
-        
-        # Get Firestore client
-        db_client = firestore.client(firebase_app)
-        
-        st.success("🎉 Firebase Admin SDK initialized successfully!")
-        
-        # Return: app, auth module, firestore client
-        return firebase_app, auth, db_client
-        
-    except Exception as e:
-        st.error(f"Firebase initialization failed: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return None, None, None
-
-# Debug function for Firebase configuration
-def debug_firebase_config():
-    """Debug Firebase configuration to identify issues"""
-    st.subheader("🔧 Firebase Configuration Debug")
-    
-    try:
-        if "connections" not in st.secrets:
-            st.error("❌ No 'connections' section in secrets")
-            return
-            
-        if "firebase" not in st.secrets["connections"]:
-            st.error("❌ No 'firebase' section in connections")
-            return
-            
-        config = dict(st.secrets["connections"]["firebase"])
-        st.success("✅ Firebase config section found")
-        
-        # Check individual fields
-        required_fields = ['project_id', 'private_key', 'client_email', 'private_key_id']
-        
-        st.write("**Field validation:**")
-        
-        for field in required_fields:
-            if field in config and config[field]:
-                if field == 'private_key':
-                    key = config[field]
-                    st.write(f"✅ {field}: Present ({len(key)} characters)")
-                    st.write(f"   - Starts correctly: {key.startswith('-----BEGIN PRIVATE KEY-----')}")
-                    st.write(f"   - Ends correctly: {key.endswith('-----END PRIVATE KEY-----')}")
-                else:
-                    value = str(config[field])[:50] + "..." if len(str(config[field])) > 50 else str(config[field])
-                    st.write(f"✅ {field}: `{value}`")
-            else:
-                st.error(f"❌ {field}: Missing or empty")
-        
-        # Test credential creation
-        st.write("**Credential creation test:**")
-        try:
-            test_config = dict(config)
-            test_config['type'] = 'service_account'
-            
-            # Don't actually create credentials in test, just validate structure
-            if all(test_config.get(field) for field in required_fields):
-                st.success("✅ All required fields present for credential creation")
-            else:
-                st.error("❌ Missing required fields for credential creation")
-                
-        except Exception as test_error:
-            st.error(f"❌ Credential validation failed: {test_error}")
-    
-    except Exception as e:
-        st.error(f"❌ Debug failed: {e}")
-
-# Initialize Firebase and store in session state
+# Initialize Firebase
 if st.session_state.firebase_app is None:
     st.session_state.firebase_app, st.session_state.firebase_auth, st.session_state.firebase_db = initialize_firebase()
-
-# Enhanced visualization functions
-def create_cost_heatmap(results):
-    """Create cost heatmap for environment comparison"""
-    if not results:
-        return None
-    
-    valid_results = {k: v for k, v in results.items() if 'error' not in v}
-    if not valid_results:
-        return None
-    
-    environments = list(valid_results.keys())
-    # Adjust cost categories based on new structure (if Multi-AZ)
-    # This assumes 'total_cost' is always available at the top level
-    cost_categories = ['Instance Cost', 'Storage Cost', 'Backup Cost', 'Total Cost']
-    
-    cost_matrix = []
-    for env in environments:
-        result = valid_results[env]
-        # Check if it's a Multi-AZ breakdown or single instance
-        if 'writer' in result and 'readers' in result:
-            instance_cost_sum = safe_get(result['cost_breakdown'], 'writer_monthly', 0) + \
-                                safe_get(result['cost_breakdown'], 'readers_monthly', 0)
-            storage_cost = safe_get(result['cost_breakdown'], 'storage_monthly', 0)
-            backup_cost = safe_get(result['cost_breakdown'], 'backup_monthly', 0)
-            total_cost = safe_get(result, 'total_cost', 0)
-        else:
-            # Old/single instance structure
-            cost_breakdown = safe_get(result, 'cost_breakdown', {})
-            instance_cost_sum = safe_get(cost_breakdown, 'instance_monthly', safe_get(result, 'instance_cost', 0))
-            storage_cost = safe_get(cost_breakdown, 'storage_monthly', safe_get(result, 'storage_cost', 0))
-            backup_cost = safe_get(cost_breakdown, 'backup_monthly', safe_get(result, 'storage_cost', 0) * 0.25)
-            total_cost = safe_get(result, 'total_cost', 0)
-
-        row = [
-            instance_cost_sum,
-            storage_cost,
-            backup_cost,
-            total_cost
-        ]
-        cost_matrix.append(row)
-    
-    cost_matrix = np.array(cost_matrix).T
-    
-    fig = go.Figure(data=go.Heatmap(
-        z=cost_matrix,
-        x=environments,
-        y=cost_categories,
-        colorscale='RdYlBu_r',
-        text=[[f'${cost:,.0f}' for cost in row] for row in cost_matrix],
-        texttemplate='%{text}',
-        textfont={"size": 12},
-        colorbar=dict(title="Monthly Cost ($)")
-    ))
-    
-    fig.update_layout(
-        title={
-            'text': "🔥 Cost Heatmap - All Categories vs Environments",
-            'x': 0.5,
-            'font': {'size': 16}
-        },
-        xaxis_title="Environment",
-        yaxis_title="Cost Category",
-        height=400,
-        font=dict(size=12)
-    )
-    
-    return fig
-
-def create_migration_complexity_chart(calculator):
-    """Create migration complexity visualization"""
-    if not calculator or not calculator.migration_profile:
-        return None
-    
-    profile = calculator.migration_profile
-    
-    # Create complexity factors visualization
-    factors = {
-        'Schema Complexity': profile.complexity_factor,
-        'Feature Compatibility': profile.feature_compatibility,
-        'Data Type Compatibility': 0.9,  # Placeholder
-        'Performance Impact': 1.2,  # Placeholder
-    }
-    
-    fig = go.Figure(go.Bar(
-        x=list(factors.keys()),
-        y=list(factors.values()),
-        marker_color=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
-    ))
-    
-    fig.update_layout(
-        title='🔄 Migration Complexity Factors',
-        yaxis_title='Factor Score',
-        height=350
-    )
-    
-    return fig
-
-def create_workload_distribution_pie(workload_chars):
-    """Create workload characteristics pie chart"""
-    if not workload_chars:
-        return None
-    
-    # Map workload characteristics to percentages
-    io_mapping = {'read_heavy': 70, 'write_heavy': 30, 'mixed': 50}
-    read_pct = io_mapping.get(workload_chars.io_pattern, 50)
-    write_pct = 100 - read_pct
-    
-    fig = go.Figure(data=[go.Pie(
-        labels=['Read Operations', 'Write Operations'],
-        values=[read_pct, write_pct],
-        hole=.3,
-        marker_colors=['#36A2EB', '#FF6384']
-    )])
-    
-    fig.update_layout(
-        title='📊 Workload I/O Distribution',
-        height=350
-    )
-    
-    return fig
-
-def create_bulk_analysis_summary_chart(bulk_results):
-    """Create summary chart for bulk analysis results"""
-    if not bulk_results:
-        return None
-    
-    server_names = []
-    total_costs = []
-    instance_types = [] # This will be a list of instance types (writer or main)
-    vcpus = [] # This will be for the main instance (writer or single)
-    ram_gb = [] # This will be for the main instance (writer or single)
-    
-    for server_name, results in bulk_results.items():
-        if 'error' not in results:
-            # Get PROD environment or first available
-            result = results.get('PROD', list(results.values())[0])
-            if 'error' not in result:
-                server_names.append(server_name)
-                total_costs.append(safe_get(result, 'total_cost', 0))
-                
-                # Adapt for new structure: get writer type or single instance type
-                if 'writer' in result:
-                    instance_types.append(safe_get_str(result['writer'], 'instance_type', 'Unknown'))
-                    vcpus.append(safe_get(result['writer'], 'actual_vCPUs', 0))
-                    ram_gb.append(safe_get(result['writer'], 'actual_RAM_GB', 0))
-                else:
-                    instance_types.append(safe_get_str(result, 'instance_type', 'Unknown'))
-                    vcpus.append(safe_get(result, 'actual_vCPUs', 0))
-                    ram_gb.append(safe_get(result, 'actual_RAM_GB', 0))
-    
-    if not server_names:
-        return None
-    
-    # Create subplot with secondary y-axis
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=('Monthly Cost by Server', 'vCPUs by Server', 'RAM by Server', 'Instance Type Distribution'),
-        specs=[[{"secondary_y": False}, {"secondary_y": False}],
-               [{"secondary_y": False}, {"type": "pie"}]]
-    )
-    
-    # Monthly costs
-    fig.add_trace(
-        go.Bar(x=server_names, y=total_costs, name='Monthly Cost', marker_color='#1f77b4'),
-        row=1, col=1
-    )
-    
-    # vCPUs
-    fig.add_trace(
-        go.Bar(x=server_names, y=vcpus, name='vCPUs', marker_color='#ff7f0e'),
-        row=1, col=2
-    )
-    
-    # RAM
-    fig.add_trace(
-        go.Bar(x=server_names, y=ram_gb, name='RAM (GB)', marker_color='#2ca02c'),
-        row=2, col=1
-    )
-    
-    # Instance type distribution
-    instance_counts = pd.Series(instance_types).value_counts()
-    fig.add_trace(
-        go.Pie(labels=instance_counts.index, values=instance_counts.values, name="Instance Types"),
-        row=2, col=2
-    )
-    
-    fig.update_layout(
-        title_text="📊 Bulk Analysis Summary Dashboard",
-        showlegend=False,
-        height=600
-    )
-    
-    return fig
-
-def parse_bulk_upload_file(uploaded_file):
-    """Parse bulk upload file and extract server specifications"""
-    try:
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        elif uploaded_file.name.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(uploaded_file)
-        else:
-            st.error("Unsupported file format. Please upload CSV or Excel files.")
-            return None
-        
-        # Standardize column names (case insensitive)
-        df.columns = df.columns.str.lower().str.strip()
-        
-        # Expected columns mapping
-        column_mapping = {
-            'server_name': ['server_name', 'servername', 'name', 'hostname', 'server'],
-            'cpu_cores': ['cpu_cores', 'cpucores', 'cores', 'cpu', 'processors'],
-            'ram_gb': ['ram_gb', 'ramgb', 'ram', 'memory', 'memory_gb'],
-            'storage_gb': ['storage_gb', 'storagegb', 'storage', 'disk', 'disk_gb'],
-            'peak_cpu_percent': ['peak_cpu_percent', 'peak_cpu', 'cpu_util', 'cpu_utilization', 'max_cpu'],
-            'peak_ram_percent': ['peak_ram_percent', 'peak_ram', 'ram_util', 'ram_utilization', 'max_memory'],
-            'max_iops': ['max_iops', 'maxiops', 'iops', 'peak_iops'],
-            'max_throughput_mbps': ['max_throughput_mbps', 'max_throughput', 'throughput', 'bandwidth'],
-            'database_engine': ['database_engine', 'db_engine', 'engine', 'database']
-        }
-        
-        # Map columns
-        mapped_columns = {}
-        for standard_name, possible_names in column_mapping.items():
-            for col in df.columns:
-                if col in possible_names:
-                    mapped_columns[standard_name] = col
-                    break
-        
-        # Validate required columns
-        required_columns = ['server_name', 'cpu_cores', 'ram_gb', 'storage_gb']
-        missing_columns = [col for col in required_columns if col not in mapped_columns]
-        
-        if missing_columns:
-            st.error(f"Missing required columns: {missing_columns}")
-            st.info("Required columns: Server Name, CPU Cores, RAM (GB), Storage (GB)")
-            return None
-        
-        # Extract and clean data
-        servers = []
-        for idx, row in df.iterrows():
-            try:
-                server = {
-                    'server_name': str(row[mapped_columns['server_name']]).strip(),
-                    'cpu_cores': int(float(row[mapped_columns['cpu_cores']])),
-                    'ram_gb': int(float(row[mapped_columns['ram_gb']])),
-                    'storage_gb': int(float(row[mapped_columns['storage_gb']])),
-                    'peak_cpu_percent': int(float(row.get(mapped_columns.get('peak_cpu_percent', ''), 75))),
-                    'peak_ram_percent': int(float(row.get(mapped_columns.get('peak_ram_percent', ''), 80))),
-                    'max_iops': int(float(row.get(mapped_columns.get('max_iops', ''), 1000))),
-                    'max_throughput_mbps': int(float(row.get(mapped_columns.get('max_throughput_mbps', ''), 125))),
-                    'database_engine': str(row.get(mapped_columns.get('database_engine', ''), 'oracle-ee')).strip().lower()
-                }
-                
-                # Validate server data
-                if server['cpu_cores'] <= 0 or server['ram_gb'] <= 0 or server['storage_gb'] <= 0:
-                    st.warning(f"Invalid data for server {server['server_name']} at row {idx + 1}. Skipping.")
-                    continue
-                
-                servers.append(server)
-                
-            except (ValueError, TypeError) as e:
-                st.warning(f"Error parsing row {idx + 1}: {e}. Skipping.")
-                continue
-        
-        if not servers:
-            st.error("No valid server data found in the uploaded file.")
-            return None
-        
-        st.success(f"Successfully parsed {len(servers)} servers from the uploaded file.")
-        return servers
-        
-    except Exception as e:
-        st.error(f"Error parsing file: {e}")
-        return None
 
 # Initialize components
 @st.cache_resource
@@ -890,6 +736,10 @@ if st.session_state.calculator is None:
         use_real_time_pricing=True
     )
 
+# ================================
+# MAIN APPLICATION
+# ================================
+
 # Header
 st.title("🚀 Enterprise AWS RDS Migration & Sizing Tool")
 st.markdown("**AI-Powered Analysis • Homogeneous & Heterogeneous Migrations • Real-time AWS Pricing • Advanced Analytics**")
@@ -915,19 +765,14 @@ if st.session_state.firebase_app:
 else:
     st.sidebar.warning("Firebase not connected")
 
-# Add debug button in sidebar
-if st.sidebar.button("🔧 Debug Firebase"):
-    debug_firebase_config()
-
-# Add password generator for development (remove in production)
-if st.sidebar.button("🔧 Generate Password Hashes (Dev Only)"):
-    with st.sidebar.expander("Password Generator"):
-        generate_test_passwords()
-
-st.markdown("---") # Visual separator after auth status
+st.markdown("---")
 
 # Main navigation
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🎯 Migration Planning", "🖥️ Server Specifications", "📊 Sizing Analysis", "💰 Financial Analysis", "🤖 AI Insights", "📋 Reports"])
+
+# ================================
+# TAB 1: MIGRATION PLANNING
+# ================================
 
 with tab1:
     st.header("Migration Configuration")
@@ -937,7 +782,6 @@ with tab1:
     with col1:
         st.subheader("🔄 Migration Type")
         
-        # Migration path selection
         source_engine_selection = st.selectbox(
             "Source Database Engine",
             ["oracle-ee", "oracle-se", "oracle-se1", "oracle-se2", "sqlserver-ee", "sqlserver-se", 
@@ -956,7 +800,6 @@ with tab1:
             key="target_engine_select"
         )
         
-        # Determine migration type
         if source_engine_selection.split('-')[0] == target_engine_selection.split('-')[0]:
             migration_type_display = "Homogeneous"
             migration_color = "success"
@@ -981,7 +824,6 @@ with tab1:
         transaction_volume = st.selectbox("Transaction Volume", ["low", "medium", "high", "very_high"], index=1, key="transaction_volume_select")
         analytical_workload = st.checkbox("Analytical/Reporting Workload", key="analytical_workload_checkbox")
     
-    # AWS Configuration
     st.subheader("☁️ AWS Configuration")
     
     col1, col2, col3 = st.columns(3)
@@ -990,7 +832,6 @@ with tab1:
         region = st.selectbox("AWS Region", ["us-east-1", "us-west-1", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-1"], key="region_select")
     
     with col2:
-        # Initializing the deployment option with session state for persistence
         st.session_state.deployment_option = st.selectbox(
             "Deployment Option", 
             ["Single-AZ", "Multi-AZ", "Multi-AZ Cluster", "Aurora Global", "Serverless"], 
@@ -1001,24 +842,20 @@ with tab1:
     with col3:
         storage_type = st.selectbox("Storage Type", ["gp3", "gp2", "io1", "io2", "aurora"], key="storage_type_select")
     
-    # Store selected values
     st.session_state.source_engine = source_engine_selection
     st.session_state.target_engine = target_engine_selection
-    # st.session_state.deployment_option is already updated by the selectbox
     st.session_state.region = region
     st.session_state.storage_type = storage_type
 
     if st.button("🎯 Configure Migration", type="primary", use_container_width=True):
         with st.spinner("Configuring migration parameters..."):
             try:
-                # Update API key if needed
                 if st.session_state.user_claude_api_key_input and st.session_state.calculator.ai_client is None:
                     st.session_state.calculator = EnhancedRDSSizingCalculator(
                         anthropic_api_key=st.session_state.user_claude_api_key_input,
                         use_real_time_pricing=True
                     )
                 
-                # Configure workload characteristics
                 workload_chars = WorkloadCharacteristics(
                     cpu_utilization_pattern=cpu_pattern,
                     memory_usage_pattern=memory_pattern,
@@ -1028,14 +865,12 @@ with tab1:
                     analytical_workload=analytical_workload
                 )
                 
-                # Set migration parameters
                 st.session_state.calculator.set_migration_parameters(
                     source_engine_selection, target_engine_selection, workload_chars
                 )
                 
                 st.session_state.migration_configured = True
                 
-                # Display migration analysis
                 migration_profile = st.session_state.calculator.migration_profile
                 
                 st.markdown(f"""
@@ -1053,13 +888,16 @@ with tab1:
             except Exception as e:
                 st.error(f"❌ Error configuring migration: {str(e)}")
 
+# ================================
+# TAB 2: SERVER SPECIFICATIONS
+# ================================
+
 with tab2:
     st.header("🖥️ On-Premises Server Specifications")
     
     if not st.session_state.migration_configured:
         st.warning("⚠️ Please configure migration settings in the Migration Planning tab first.")
     else:
-        # Analysis Mode Selection
         st.subheader("📋 Analysis Mode")
         analysis_mode = st.radio(
             "Choose Analysis Mode",
@@ -1074,7 +912,6 @@ with tab2:
             # Single Server Specifications
             st.subheader("🖥️ Single Server Configuration")
             
-            # Server Basic Info
             with st.expander("📋 Server Information", expanded=True):
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1084,7 +921,6 @@ with tab2:
                     database_version = st.text_input("Database Version", value="12.1.0.2", key="db_version_input")
                     database_size_gb = st.number_input("Database Size (GB)", min_value=1, value=500, key="db_size_input")
             
-            # Comprehensive Hardware Specifications
             st.subheader("💾 Hardware Specifications")
             
             col1, col2 = st.columns(2)
@@ -1108,7 +944,7 @@ with tab2:
                 st.markdown('<div class="spec-section">', unsafe_allow_html=True)
                 st.markdown("**💿 Storage Resources**")
                 storage = st.number_input("Current Storage (GB)", min_value=10, value=500, step=10, key="storage_input")
-                storage_type = st.selectbox("Storage Type", ["HDD", "SSD", "NVMe SSD", "SAN"], index=2, key="storage_type_hw_select")
+                storage_type_hw = st.selectbox("Storage Type", ["HDD", "SSD", "NVMe SSD", "SAN"], index=2, key="storage_type_hw_select")
                 raid_level = st.selectbox("RAID Level", ["RAID 0", "RAID 1", "RAID 5", "RAID 10", "RAID 6"], index=3, key="raid_level_select")
                 st.markdown('</div>', unsafe_allow_html=True)
                 
@@ -1118,7 +954,6 @@ with tab2:
                 years = st.number_input("Planning Horizon (years)", min_value=1, max_value=5, value=3, key="years_input")
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            # Performance Specifications
             st.subheader("⚡ Performance Specifications")
             
             col1, col2, col3 = st.columns(3)
@@ -1147,7 +982,6 @@ with tab2:
                 max_throughput_mbps = st.number_input("Peak Throughput (MB/s)", min_value=10, max_value=10000, value=250, step=10, key="max_throughput_input")
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            # Network and Connection Specifications
             st.subheader("🌐 Network & Connection Specifications")
             
             col1, col2 = st.columns(2)
@@ -1166,7 +1000,6 @@ with tab2:
                 avg_connections = st.number_input("Average Concurrent Connections", min_value=10, max_value=max_connections, value=min(max_connections//2, 200), step=10, key="avg_connections_input")
                 st.markdown('</div>', unsafe_allow_html=True)
             
-            # Advanced settings
             with st.expander("⚙️ Advanced Settings"):
                 col1, col2 = st.columns(2)
                 
@@ -1180,7 +1013,6 @@ with tab2:
                     backup_retention_override = st.number_input("Backup Retention (days, 0=default)", min_value=0, max_value=35, value=0, key="backup_retention_input")
                     multi_master = st.checkbox("Multi-Master Configuration", key="multi_master_checkbox")
             
-            # Server Summary Card
             st.subheader("📋 Server Summary")
             st.markdown(f"""
             <div class="server-summary-card">
@@ -1188,7 +1020,7 @@ with tab2:
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem;">
                     <div><strong>CPU:</strong> {cores} cores @ {cpu_ghz}GHz</div>
                     <div><strong>RAM:</strong> {ram}GB {ram_type}</div>
-                    <div><strong>Storage:</strong> {storage}GB {storage_type}</div>
+                    <div><strong>Storage:</strong> {storage}GB {storage_type_hw}</div>
                     <div><strong>IOPS:</strong> {max_iops:,} peak</div>
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 0.5rem;">
@@ -1200,7 +1032,6 @@ with tab2:
             </div>
             """, unsafe_allow_html=True)
             
-            # Save server specification
             if st.button("💾 Save Server Specification", type="primary", use_container_width=True):
                 server_spec = {
                     'server_name': server_name,
@@ -1214,7 +1045,7 @@ with tab2:
                     'ram_type': ram_type,
                     'ram_speed': ram_speed,
                     'storage': storage,
-                    'storage_type': storage_type,
+                    'storage_type': storage_type_hw,
                     'raid_level': raid_level,
                     'growth_rate': growth_rate,
                     'years': years,
@@ -1239,7 +1070,6 @@ with tab2:
                     'multi_master': multi_master
                 }
                 
-                # Store in session state for analysis
                 st.session_state.current_server_spec = server_spec
                 st.success(f"✅ Server specification for {server_name} saved successfully!")
         
@@ -1247,7 +1077,6 @@ with tab2:
             # Bulk Server Analysis
             st.subheader("📊 Bulk Server Analysis")
             
-            # File upload section
             st.markdown("""
             <div class="bulk-upload-zone">
                 <h3>📁 Upload Server Specifications</h3>
@@ -1261,7 +1090,6 @@ with tab2:
                 help="Upload a file with server specifications. Required columns: Server Name, CPU Cores, RAM (GB), Storage (GB)"
             )
             
-            # Display template
             with st.expander("📋 Download Template & View Required Format"):
                 st.markdown("**Required Columns:**")
                 template_data = {
@@ -1279,7 +1107,6 @@ with tab2:
                 template_df = pd.DataFrame(template_data)
                 st.dataframe(template_df, use_container_width=True)
                 
-                # Download template
                 csv_template = template_df.to_csv(index=False)
                 st.download_button(
                     label="📥 Download CSV Template",
@@ -1289,7 +1116,6 @@ with tab2:
                     use_container_width=True
                 )
             
-            # Process uploaded file
             if uploaded_file is not None:
                 with st.spinner("Processing uploaded file..."):
                     servers = parse_bulk_upload_file(uploaded_file)
@@ -1297,10 +1123,8 @@ with tab2:
                     if servers:
                         st.session_state.bulk_upload_data = servers
                         
-                        # Display upload summary
                         st.success(f"✅ Successfully loaded {len(servers)} servers")
                         
-                        # Show summary statistics
                         col1, col2, col3, col4 = st.columns(4)
                         
                         total_cores = sum([s['cpu_cores'] for s in servers])
@@ -1316,15 +1140,12 @@ with tab2:
                         with col4:
                             st.metric("Total Storage (GB)", f"{total_storage:,}")
                         
-                        # Display server list
                         st.subheader("📋 Uploaded Servers")
                         servers_df = pd.DataFrame(servers)
                         st.dataframe(servers_df, use_container_width=True)
                         
-                        # Store for analysis
                         st.session_state.on_prem_servers = servers
             
-            # Manual server addition (for bulk mode)
             with st.expander("➕ Add Individual Server Manually"):
                 col1, col2, col3 = st.columns(3)
                 
@@ -1366,7 +1187,6 @@ with tab2:
                     else:
                         st.error("Please provide a server name")
             
-            # Display current bulk server list
             if st.session_state.on_prem_servers:
                 st.subheader(f"📊 Current Bulk Analysis List ({len(st.session_state.on_prem_servers)} servers)")
                 
@@ -1382,7 +1202,6 @@ with tab2:
                         st.rerun()
                 
                 with col2:
-                    # Export current list
                     export_csv = bulk_df.to_csv(index=False)
                     st.download_button(
                         label="📥 Export Current List",
@@ -1391,6 +1210,10 @@ with tab2:
                         mime="text/csv",
                         use_container_width=True
                     )
+
+# ================================
+# TAB 3: SIZING ANALYSIS
+# ================================
 
 with tab3:
     st.header("📊 Sizing Analysis & Recommendations")
@@ -1410,7 +1233,6 @@ with tab3:
             
             server_spec = st.session_state.current_server_spec
             
-            # Display current server info
             st.markdown(f"""
             <div class="server-summary-card">
                 <h4>🔍 Analyzing: {server_spec['server_name']}</h4>
@@ -1423,7 +1245,6 @@ with tab3:
             </div>
             """, unsafe_allow_html=True)
             
-            # Generate recommendations button
             col1, col2 = st.columns([3, 1])
             
             with col1:
@@ -1454,12 +1275,10 @@ with tab3:
                                 "max_connections": server_spec['max_connections']
                             }
                             
-                            # Generate recommendations
                             results = calculator.generate_comprehensive_recommendations(inputs)
                             st.session_state.results = results
                             st.session_state.generation_time = time.time() - start_time
                             
-                            # Generate AI insights if available
                             if calculator.ai_client:
                                 with st.spinner("🤖 Generating AI insights..."):
                                     try:
@@ -1488,7 +1307,6 @@ with tab3:
             servers = st.session_state.on_prem_servers
             st.info(f"📋 Ready to analyze {len(servers)} servers")
             
-            # Bulk analysis settings
             with st.expander("⚙️ Bulk Analysis Settings"):
                 col1, col2 = st.columns(2)
                 
@@ -1500,7 +1318,6 @@ with tab3:
                     export_individual_reports = st.checkbox("Export individual server reports", value=False)
                     enable_parallel_processing = st.checkbox("Enable parallel processing", value=True)
             
-            # Start bulk analysis
             if st.button("🚀 Start Bulk Analysis", type="primary", use_container_width=True):
                 progress_bar = st.progress(0)
                 status_placeholder = st.empty()
@@ -1525,8 +1342,8 @@ with tab3:
                                 "on_prem_ram_gb": server['ram_gb'],
                                 "peak_ram_percent": server['peak_ram_percent'],
                                 "storage_current_gb": server['storage_gb'],
-                                "storage_growth_rate": 0.2,  # Default 20%
-                                "years": 3,  # Default 3 years
+                                "storage_growth_rate": 0.2,
+                                "years": 3,
                                 "enable_encryption": True,
                                 "enable_perf_insights": True,
                                 "enable_enhanced_monitoring": False,
@@ -1535,7 +1352,6 @@ with tab3:
                                 "max_throughput_mbps": server['max_throughput_mbps']
                             }
                             
-                            # Generate recommendations
                             server_results = calculator.generate_comprehensive_recommendations(inputs)
                             bulk_results[server['server_name']] = server_results
                             
@@ -1543,46 +1359,37 @@ with tab3:
                             bulk_results[server['server_name']] = {'error': str(e)}
                             st.warning(f"⚠️ Error analyzing {server['server_name']}: {e}")
                         
-                        # Update progress
                         progress_bar.progress((i + 1) / total_servers)
                         
-                        # Brief display of intermediate results
-                        if i % 3 == 0:  # Update display every 3 servers
+                        if i % 3 == 0:
                             with results_placeholder.container():
                                 st.write(f"Completed: {i+1}/{total_servers} servers")
                     
-                    # Store results
                     st.session_state.bulk_results = bulk_results
                     
-                    # Final success message
                     successful_analyses = len([r for r in bulk_results.values() if 'error' not in r])
                     failed_analyses = total_servers - successful_analyses
                     
                     progress_bar.progress(1.0)
                     status_placeholder.success(f"✅ Bulk analysis complete! {successful_analyses} successful, {failed_analyses} failed")
                     
-                    # Display bulk results summary
                     if successful_analyses > 0:
                         st.subheader("📊 Bulk Analysis Results")
                         
-                        # Create summary chart
                         summary_fig = create_bulk_analysis_summary_chart(bulk_results)
                         if summary_fig:
                             st.plotly_chart(summary_fig, use_container_width=True)
                         
-                        # Create summary table
                         summary_data = []
                         total_monthly_cost = 0
                         
                         for server_name, results in bulk_results.items():
                             if 'error' not in results:
-                                # Get PROD environment or first available
                                 result = results.get('PROD', list(results.values())[0])
                                 if 'error' not in result:
                                     monthly_cost = safe_get(result, 'total_cost', 0)
                                     total_monthly_cost += monthly_cost
                                     
-                                    # Adapt for new structure: get writer type or single instance type
                                     recommended_instance_type = ""
                                     vcpus_display = 0
                                     ram_gb_display = 0
@@ -1621,7 +1428,6 @@ with tab3:
                         summary_df = pd.DataFrame(summary_data)
                         st.dataframe(summary_df, use_container_width=True)
                         
-                        # Cost summary
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("Total Monthly Cost", f"${total_monthly_cost:,.2f}")
@@ -1635,12 +1441,10 @@ with tab3:
                     st.error(f"❌ Bulk analysis failed: {str(e)}")
                     st.code(traceback.format_exc())
         
-        # Display results (both single and bulk)
+        # Display results for both single and bulk
         if st.session_state.results or st.session_state.bulk_results:
             current_results = st.session_state.results if st.session_state.current_analysis_mode == 'single' else st.session_state.bulk_results
-            ai_insights = st.session_state.ai_insights
             
-            # Export options
             st.subheader("📊 Export Options")
             
             col1, col2, col3 = st.columns(3)
@@ -1648,18 +1452,16 @@ with tab3:
             with col1:
                 if st.button("📊 Export to CSV", use_container_width=True):
                     if st.session_state.current_analysis_mode == 'single':
-                        # Single server CSV export
                         valid_results = {k: v for k, v in current_results.items() if 'error' not in v}
                         
                         df_data = []
                         for env, result in valid_results.items():
-                            # Adapt for new structure
                             instance_type_display = safe_get_str(result, 'instance_type', 'N/A')
                             vcpus_display = safe_get(result, 'actual_vCPUs', 0)
                             ram_gb_display = safe_get(result, 'actual_RAM_GB', 0)
                             instance_cost_display = safe_get(result, 'instance_cost', 0)
                             
-                            if 'writer' in result: # Multi-AZ structure
+                            if 'writer' in result:
                                 writer_info = result['writer']
                                 instance_type_display = safe_get_str(writer_info, 'instance_type', 'N/A')
                                 vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
@@ -1685,19 +1487,17 @@ with tab3:
                         csv = df.to_csv(index=False)
                         filename = f"rds_single_recommendations_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
                     else:
-                        # Bulk server CSV export
                         df_data = []
                         for server_name, server_results in current_results.items():
                             if 'error' not in server_results:
                                 result = server_results.get('PROD', list(server_results.values())[0])
                                 if 'error' not in result:
-                                    # Adapt for new structure
                                     instance_type_display = ""
                                     vcpus_display = 0
                                     ram_gb_display = 0
                                     instance_cost_display = 0
 
-                                    if 'writer' in result: # Multi-AZ structure
+                                    if 'writer' in result:
                                         writer_info = result['writer']
                                         instance_type_display = safe_get_str(writer_info, 'instance_type', 'N/A')
                                         vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
@@ -1749,7 +1549,7 @@ with tab3:
                             'migration_type': calculator.migration_profile.migration_type.value if calculator.migration_profile else 'unknown'
                         },
                         'recommendations': current_results,
-                        'ai_insights': ai_insights,
+                        'ai_insights': st.session_state.ai_insights,
                         'generation_time': st.session_state.get('generation_time', 0),
                         'generated_at': datetime.now().isoformat()
                     }
@@ -1773,7 +1573,6 @@ with tab3:
             with col3:
                 if st.button("📈 Export Cost Summary", use_container_width=True):
                     if st.session_state.current_analysis_mode == 'single':
-                        # Single server cost summary
                         valid_results = {k: v for k, v in current_results.items() if 'error' not in v}
                         
                         summary_data = []
@@ -1784,7 +1583,6 @@ with tab3:
                             result_total_cost = safe_get(result, 'total_cost', 0)
                             percentage = (result_total_cost / total_cost * 100) if total_cost > 0 else 0
                             
-                            # Adapt for new structure
                             instance_cost_summary = 0
                             if 'writer' in result:
                                 instance_cost_summary = safe_get(cost_breakdown, 'writer_monthly', 0) + \
@@ -1805,7 +1603,6 @@ with tab3:
                         
                         filename = f"rds_single_cost_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
                     else:
-                        # Bulk cost summary
                         summary_data = []
                         total_monthly_cost = 0
                         
@@ -1823,7 +1620,6 @@ with tab3:
                                     monthly_cost = safe_get(result, 'total_cost', 0)
                                     percentage = (monthly_cost / total_monthly_cost * 100) if total_monthly_cost > 0 else 0
                                     
-                                    # Adapt for new structure
                                     instance_type_summary = ""
                                     vcpus_summary = 0
                                     ram_gb_summary = 0
@@ -1968,3 +1764,452 @@ with tab3:
                                     <div class="metric-value" style="font-size:1.5rem;">${safe_get(reader_info, 'instance_cost', 0):,.0f}</div>
                                 </div>
                                 """, unsafe_allow_html=True)
+
+# ================================
+# TAB 4: FINANCIAL ANALYSIS
+# ================================
+
+with tab4:
+    st.header("💰 Financial Analysis & Advanced Visualizations")
+    
+    current_results = None
+    if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+        current_results = st.session_state.results
+        analysis_title = "Single Server"
+    elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+        current_results = st.session_state.bulk_results
+        analysis_title = "Bulk Analysis"
+    
+    if not current_results:
+        st.info("💡 Generate sizing recommendations first to enable financial analysis.")
+    else:
+        if st.session_state.current_analysis_mode == 'single':
+            results = current_results
+            valid_results = {k: v for k, v in results.items() if 'error' not in v}
+            
+            if valid_results:
+                st.subheader(f"📊 {analysis_title} Financial Summary")
+                
+                prod_result = valid_results.get('PROD', list(valid_results.values())[0])
+                total_cost = safe_get(prod_result, 'total_cost', 0)
+                
+                total_instance_cost = 0
+                if 'writer' in prod_result:
+                    total_instance_cost = safe_get(prod_result['cost_breakdown'], 'writer_monthly', 0) + \
+                                          safe_get(prod_result['cost_breakdown'], 'readers_monthly', 0)
+                else:
+                    total_instance_cost = safe_get(prod_result, 'instance_cost', 0)
+                
+                total_storage_cost = safe_get(prod_result, 'storage_cost', 0)
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">${total_cost:,.0f}</div>
+                        <div class="metric-label">Total Monthly Cost</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">${total_cost * 12:,.0f}</div>
+                        <div class="metric-label">Annual Cost</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col3:
+                    instance_pct = (total_instance_cost/total_cost)*100 if total_cost > 0 else 0
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">{instance_pct:.0f}%</div>
+                        <div class="metric-label">Instance Cost %</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col4:
+                    storage_pct = (total_storage_cost/total_cost)*100 if total_cost > 0 else 0
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">{storage_pct:.0f}%</div>
+                        <div class="metric-label">Storage Cost %</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.subheader("📈 Advanced Financial Visualizations")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    heatmap_fig = create_cost_heatmap(results)
+                    if heatmap_fig:
+                        st.plotly_chart(heatmap_fig, use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with col2:
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    if st.session_state.calculator and st.session_state.calculator.workload_characteristics:
+                        workload_fig = create_workload_distribution_pie(st.session_state.calculator.workload_characteristics)
+                        if workload_fig:
+                            st.plotly_chart(workload_fig, use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+        else:
+            st.subheader(f"📊 {analysis_title} Financial Summary")
+            
+            total_servers = len(current_results)
+            successful_servers = 0
+            total_monthly_cost = 0
+            total_annual_cost = 0
+            server_costs = []
+            
+            for server_name, server_results in current_results.items():
+                if 'error' not in server_results:
+                    successful_servers += 1
+                    result = server_results.get('PROD', list(server_results.values())[0])
+                    if 'error' not in result:
+                        monthly_cost = safe_get(result, 'total_cost', 0)
+                        total_monthly_cost += monthly_cost
+                        total_annual_cost += monthly_cost * 12
+                        
+                        instance_type_for_chart = ""
+                        vcpus_for_chart = 0
+                        ram_gb_for_chart = 0
+                        if 'writer' in result:
+                            writer_info = result['writer']
+                            instance_type_for_chart = safe_get_str(writer_info, 'instance_type', 'Unknown')
+                            vcpus_for_chart = safe_get(writer_info, 'actual_vCPUs', 0)
+                            ram_gb_for_chart = safe_get(writer_info, 'actual_RAM_GB', 0)
+                        else:
+                            instance_type_for_chart = safe_get_str(result, 'instance_type', 'Unknown')
+                            vcpus_for_chart = safe_get(result, 'actual_vCPUs', 0)
+                            ram_gb_for_chart = safe_get(result, 'actual_RAM_GB', 0)
+
+                        server_costs.append({
+                            'Server Name': server_name,
+                            'Monthly Cost': monthly_cost,
+                            'Instance Type': instance_type_for_chart,
+                            'vCPUs': vcpus_for_chart,
+                            'RAM (GB)': ram_gb_for_chart
+                        })
+            
+            if successful_servers > 0:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">${total_monthly_cost:,.0f}</div>
+                        <div class="metric-label">Total Monthly Cost (All Servers)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">${total_annual_cost:,.0f}</div>
+                        <div class="metric-label">Total Annual Cost (All Servers)</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col3:
+                    avg_cost_per_server = total_monthly_cost / successful_servers
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">${avg_cost_per_server:,.0f}</div>
+                        <div class="metric-label">Avg. Monthly Cost per Server</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.subheader("📈 Bulk Analysis Visualizations")
+                bulk_summary_fig = create_bulk_analysis_summary_chart(current_results)
+                if bulk_summary_fig:
+                    st.plotly_chart(bulk_summary_fig, use_container_width=True)
+            else:
+                st.info("No successful bulk analysis results to display.")
+
+# ================================
+# TAB 5: AI INSIGHTS
+# ================================
+
+with tab5:
+    st.header("🤖 AI Insights & Recommendations")
+    
+    if not st.session_state.ai_insights:
+        st.info("💡 Generate sizing recommendations first to enable AI insights.")
+    else:
+        ai_insights = st.session_state.ai_insights
+        
+        if "error" in ai_insights:
+            st.error(f"❌ Error retrieving AI insights: {ai_insights['error']}")
+        else:
+            st.markdown("""
+            <div class="ai-insight-card">
+                <h3>🤖 AI-Powered Analysis from Claude</h3>
+                <p>Leveraging advanced AI to provide deeper insights into your migration.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-value">{ai_insights.get('risk_level', 'N/A')}</div>
+                    <div class="metric-label">Migration Risk Level</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                cost_opt_potential = ai_insights.get('cost_optimization_potential', 0) * 100
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-value">{cost_opt_potential:.0f}%</div>
+                    <div class="metric-label">Cost Optimization Potential</div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                writers = ai_insights.get('recommended_writers', 'N/A')
+                readers = ai_insights.get('recommended_readers', 'N/A')
+                if writers != 'N/A' and readers != 'N/A':
+                    st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">{writers}W / {readers}R</div>
+                        <div class="metric-label">AI Recommended Arch.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                     st.markdown(f"""
+                    <div class="metric-container">
+                        <div class="metric-value">N/A</div>
+                        <div class="metric-label">AI Recommended Arch.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            st.subheader("Comprehensive AI Analysis")
+            st.markdown('<div class="advisory-box">', unsafe_allow_html=True)
+            st.write(ai_insights.get("ai_analysis", "No detailed AI analysis available."))
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            st.subheader("Recommended Migration Phases")
+            if ai_insights.get("recommended_migration_phases"):
+                st.markdown('<div class="phase-timeline">', unsafe_allow_html=True)
+                for i, phase in enumerate(ai_insights["recommended_migration_phases"]):
+                    st.markdown(f"**Phase {i+1}:** {phase}")
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("No specific migration phases recommended by AI.")
+
+# ================================
+# TAB 6: REPORTS
+# ================================
+
+with tab6:
+    st.header("📋 Export & Reporting")
+    
+    current_results = None
+    if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+        current_results = st.session_state.results
+    elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+        current_results = st.session_state.bulk_results
+    
+    if not current_results:
+        st.info("💡 Generate sizing recommendations first to enable reporting.")
+    else:
+        st.subheader("PDF Report Generation")
+        
+        st.markdown("""
+        <div class="status-info">
+            Generate a comprehensive PDF report including sizing recommendations, cost analysis, and AI insights.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("📄 Generate PDF Report", type="secondary", use_container_width=True):
+            with st.spinner("Generating PDF report... This may take a moment."):
+                try:
+                    if st.session_state.current_analysis_mode == 'single':
+                        recommendations_for_pdf = st.session_state.results
+                    else:
+                        st.warning("Bulk PDF report generation is under development. Please use CSV/JSON exports for bulk analysis.")
+                        st.stop()
+                        
+                    pdf_bytes = report_generator.generate_enhanced_pdf_report(
+                        recommendations_for_pdf,
+                        st.session_state.target_engine,
+                        st.session_state.ai_insights
+                    )
+                    
+                    if pdf_bytes:
+                        st.download_button(
+                            label="📥 Download PDF Report",
+                            data=pdf_bytes,
+                            file_name=f"aws_rds_migration_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                        st.success("✅ PDF report generated and ready for download!")
+                    else:
+                        st.error("❌ PDF report generation failed with no output.")
+                except Exception as e:
+                    st.error(f"❌ Error generating PDF report: {str(e)}")
+                    st.code(traceback.format_exc())
+
+        # Additional export options for reports tab
+        st.subheader("📊 Additional Export Options")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**📈 Executive Summary**")
+            if st.button("Generate Executive Summary", use_container_width=True):
+                if st.session_state.current_analysis_mode == 'single':
+                    if st.session_state.results:
+                        valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v}
+                        if valid_results:
+                            prod_result = valid_results.get('PROD', list(valid_results.values())[0])
+                            
+                            exec_summary = f"""
+# Executive Summary - AWS RDS Migration Analysis
+
+## Migration Overview
+- **Source Engine:** {st.session_state.source_engine}
+- **Target Engine:** {st.session_state.target_engine}
+- **Migration Type:** {st.session_state.calculator.migration_profile.migration_type.value.title() if st.session_state.calculator.migration_profile else 'Unknown'}
+
+## Cost Analysis
+- **Monthly Cost:** ${safe_get(prod_result, 'total_cost', 0):,.2f}
+- **Annual Cost:** ${safe_get(prod_result, 'total_cost', 0) * 12:,.2f}
+
+## Recommended Configuration
+"""
+                            if 'writer' in prod_result:
+                                writer_info = prod_result['writer']
+                                exec_summary += f"- **Writer Instance:** {safe_get_str(writer_info, 'instance_type', 'N/A')}\n"
+                                exec_summary += f"- **Writer Resources:** {safe_get(writer_info, 'actual_vCPUs', 0)} vCPUs, {safe_get(writer_info, 'actual_RAM_GB', 0)} GB RAM\n"
+                                if prod_result['readers']:
+                                    exec_summary += f"- **Reader Instances:** {len(prod_result['readers'])} x {safe_get_str(prod_result['readers'][0], 'instance_type', 'N/A')}\n"
+                            else:
+                                exec_summary += f"- **Instance Type:** {safe_get_str(prod_result, 'instance_type', 'N/A')}\n"
+                                exec_summary += f"- **Resources:** {safe_get(prod_result, 'actual_vCPUs', 0)} vCPUs, {safe_get(prod_result, 'actual_RAM_GB', 0)} GB RAM\n"
+                            
+                            exec_summary += f"- **Storage:** {safe_get(prod_result, 'storage_GB', 0)} GB\n"
+                            
+                            if st.session_state.ai_insights and 'ai_analysis' in st.session_state.ai_insights:
+                                exec_summary += f"\n## AI Recommendations\n{st.session_state.ai_insights['ai_analysis'][:500]}...\n"
+                            
+                            st.download_button(
+                                label="📥 Download Executive Summary",
+                                data=exec_summary,
+                                file_name=f"executive_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+                                mime="text/markdown",
+                                use_container_width=True
+                            )
+                else:
+                    st.info("Executive summary available for single server analysis only.")
+        
+        with col2:
+            st.markdown("**📋 Technical Specifications**")
+            if st.button("Export Technical Specs", use_container_width=True):
+                if st.session_state.current_analysis_mode == 'single' and 'current_server_spec' in st.session_state:
+                    tech_specs = {
+                        'server_specification': st.session_state.current_server_spec,
+                        'migration_config': {
+                            'source_engine': st.session_state.source_engine,
+                            'target_engine': st.session_state.target_engine,
+                            'deployment_option': st.session_state.deployment_option,
+                            'region': st.session_state.region,
+                            'storage_type': st.session_state.storage_type
+                        },
+                        'recommendations': st.session_state.results,
+                        'generated_at': datetime.now().isoformat()
+                    }
+                    
+                    tech_specs_json = json.dumps(tech_specs, indent=2, default=str)
+                    
+                    st.download_button(
+                        label="📥 Download Tech Specs",
+                        data=tech_specs_json,
+                        file_name=f"technical_specifications_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+                else:
+                    st.info("Technical specifications available for single server analysis only.")
+        
+        with col3:
+            st.markdown("**💰 Cost Analysis Report**")
+            if st.button("Generate Cost Report", use_container_width=True):
+                cost_analysis = {
+                    'analysis_mode': st.session_state.current_analysis_mode,
+                    'migration_type': st.session_state.calculator.migration_profile.migration_type.value if st.session_state.calculator.migration_profile else 'unknown',
+                    'cost_summary': {},
+                    'generated_at': datetime.now().isoformat()
+                }
+                
+                if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+                    valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v}
+                    cost_analysis['cost_summary'] = {
+                        'environments': {},
+                        'total_monthly': 0,
+                        'total_annual': 0
+                    }
+                    
+                    for env, result in valid_results.items():
+                        monthly_cost = safe_get(result, 'total_cost', 0)
+                        cost_analysis['cost_summary']['environments'][env] = {
+                            'monthly_cost': monthly_cost,
+                            'annual_cost': monthly_cost * 12,
+                            'cost_breakdown': safe_get(result, 'cost_breakdown', {})
+                        }
+                        cost_analysis['cost_summary']['total_monthly'] += monthly_cost
+                    
+                    cost_analysis['cost_summary']['total_annual'] = cost_analysis['cost_summary']['total_monthly'] * 12
+                
+                elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+                    cost_analysis['cost_summary'] = {
+                        'servers': {},
+                        'total_monthly': 0,
+                        'total_annual': 0,
+                        'average_monthly_per_server': 0
+                    }
+                    
+                    successful_servers = 0
+                    
+                    for server_name, server_results in st.session_state.bulk_results.items():
+                        if 'error' not in server_results:
+                            result = server_results.get('PROD', list(server_results.values())[0])
+                            if 'error' not in result:
+                                monthly_cost = safe_get(result, 'total_cost', 0)
+                                cost_analysis['cost_summary']['servers'][server_name] = {
+                                    'monthly_cost': monthly_cost,
+                                    'annual_cost': monthly_cost * 12
+                                }
+                                cost_analysis['cost_summary']['total_monthly'] += monthly_cost
+                                successful_servers += 1
+                    
+                    cost_analysis['cost_summary']['total_annual'] = cost_analysis['cost_summary']['total_monthly'] * 12
+                    cost_analysis['cost_summary']['average_monthly_per_server'] = cost_analysis['cost_summary']['total_monthly'] / max(successful_servers, 1)
+                
+                cost_report_json = json.dumps(cost_analysis, indent=2, default=str)
+                
+                st.download_button(
+                    label="📥 Download Cost Report",
+                    data=cost_report_json,
+                    file_name=f"cost_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+
+# ================================
+# FOOTER
+# ================================
+
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; padding: 2rem;">
+    <h5>🚀 Enterprise AWS RDS Migration & Sizing Tool v2.0</h5>
+    <p>AI-Powered Database Migration Analysis • Built for Enterprise Scale</p>
+    <p>💡 For support and advanced features, contact your AWS solutions architect</p>
+</div>
+""", unsafe_allow_html=True)
