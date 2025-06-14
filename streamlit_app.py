@@ -1286,7 +1286,7 @@ with tab2:
                 
                 with col3:
                     manual_iops = st.number_input("Max IOPS", min_value=100, value=2500, key="manual_iops")
-manual_throughput = st.number_input("Max Throughput (MB/s)", min_value=10, value=125, key="manual_throughput")
+                    manual_throughput = st.number_input("Max Throughput (MB/s)", min_value=10, value=125, key="manual_throughput")
                     manual_engine = st.selectbox("Database Engine", ["oracle-ee", "oracle-se", "mysql", "postgres"], key="manual_engine")
                 
                 if st.button("➕ Add Server to Bulk List", use_container_width=True):
