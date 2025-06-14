@@ -2293,42 +2293,42 @@ with tab3:
                     
                     progress_bar.progress(1.0)
                     status_placeholder.success(f"✅ Bulk analysis complete! {successful_analyses} successful, {failed_analyses} failed")
-                    if successful_analyses > 0: # Only attempt AI insights if there are successful analyses
-                if calculator.ai_client:
-                    with st.spinner("🤖 Generating AI insights for bulk analysis..."):
-                        try:
+                    #if successful_analyses > 0: # Only attempt AI insights if there are successful analyses
+                    if calculator.ai_client:
+                        with st.spinner("🤖 Generating AI insights for bulk analysis..."):
+                            try:
                             # Aggregate all successful results for AI analysis
-                            aggregated_results_for_ai = {}
-                            for server_name, server_data in bulk_results.items():
-                                if 'error' not in server_data:
+                                aggregated_results_for_ai = {}
+                                for server_name, server_data in bulk_results.items():
+                                    if 'error' not in server_data:
                                     # Assuming 'PROD' is the key for the main result
-                                    aggregated_results_for_ai[server_name] = server_data.get('PROD', list(server_data.values())[0])
+                                        aggregated_results_for_ai[server_name] = server_data.get('PROD', list(server_data.values())[0])
 
                             # Create a dummy input for the overall bulk AI insight, or refine as needed
                             # This input can be enhanced with more aggregate metrics if your AI expects it
-                            bulk_inputs_for_ai = {
-                                "region": st.session_state.region,
-                                "target_engine": st.session_state.target_engine,
-                                "source_engine": st.session_state.source_engine,
-                                "deployment": st.session_state.deployment_option,
-                                "storage_type": st.session_state.storage_type,
-                                "num_servers_analyzed": successful_analyses,
-                                "total_monthly_cost": total_monthly_cost,
-                                # Add more aggregated metrics here (e.g., total vCPUs, total RAM)
-                            }
+                                bulk_inputs_for_ai = {
+                                    "region": st.session_state.region,
+                                    "target_engine": st.session_state.target_engine,
+                                    "source_engine": st.session_state.source_engine,
+                                    "deployment": st.session_state.deployment_option,
+                                    "storage_type": st.session_state.storage_type,
+                                    "num_servers_analyzed": successful_analyses,
+                                    "total_monthly_cost": total_monthly_cost,
+                                    # Add more aggregated metrics here (e.g., total vCPUs, total RAM)
+                                }
 
-                            bulk_ai_insights = asyncio.run(calculator.generate_ai_insights(aggregated_results_for_ai, bulk_inputs_for_ai))
-                            st.session_state.ai_insights = bulk_ai_insights
-                            st.success("✅ AI insights for bulk analysis generated!")
-                        except Exception as e:
-                            st.warning(f"AI insights generation for bulk failed: {e}")
-                            st.session_state.ai_insights = None
+                                bulk_ai_insights = asyncio.run(calculator.generate_ai_insights(aggregated_results_for_ai, bulk_inputs_for_ai))
+                                st.session_state.ai_insights = bulk_ai_insights
+                                st.success("✅ AI insights for bulk analysis generated!")
+                            except Exception as e:
+                                st.warning(f"AI insights generation for bulk failed: {e}")
+                                st.session_state.ai_insights = None
             # --- END NEW CODE INSERTION HERE ---
 
-            if successful_analyses > 0:
-                st.subheader("📊 Bulk Analysis Results") # This is the line *after* the insertion
+                    if successful_analyses > 0:
+                        st.subheader("📊 Bulk Analysis Results") # This is the line *after* the insertion
 
-                summary_fig = create_bulk_analysis_summary_chart(bulk_results)
+                        summary_fig = create_bulk_analysis_summary_chart(bulk_results)
                     
                     
                     if successful_analyses > 0:
