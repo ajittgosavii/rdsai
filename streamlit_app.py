@@ -2309,14 +2309,22 @@ if st.session_state.current_analysis_mode == 'bulk' and hasattr(st.session_state
                                 </div>
                                 """, unsafe_allow_html=True)
 # Data Transfer Analysis Section
+# Add this section to TAB 3 after your existing sizing analysis
+# IMPORTANT: Make sure this is properly indented within your TAB 3 block
+
+# Data Transfer Analysis Section
 st.subheader("🚛 Data Transfer Analysis")
 
-if transfer_calculator and 'current_server_spec' in st.session_state:
-    server_spec = st.session_state.current_server_spec
-    data_size_gb = server_spec.get('storage', 500)
-    
-    with st.expander("⚙️ Transfer Configuration", expanded=True):
-        col1, col2, col3 = st.columns(3)
+# Check if we have the necessary components
+if not transfer_calculator:
+    st.warning("⚠️ Transfer calculator not initialized. Please check the data_transfer_calculator.py file.")
+elif st.session_state.current_analysis_mode == 'single':
+    # Single Server Transfer Analysis
+    if 'current_server_spec' in st.session_state:
+        server_spec = st.session_state.current_server_spec
+        data_size_gb = server_spec.get('storage', 500)
+        
+        col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("**🌐 Network Configuration**")
@@ -2336,170 +2344,285 @@ if transfer_calculator and 'current_server_spec' in st.session_state:
             )
         
         with col2:
-            st.markdown("**📊 Data Characteristics**")
+            st.markdown("**📊 Data Configuration**")
+            include_transaction_logs = st.checkbox(
+                "Include Transaction Logs (+20%)",
+                value=True,
+                key="include_logs_checkbox"
+            )
             compression_type = st.selectbox(
                 "Data Type",
                 ["database", "logs", "mixed", "none"],
                 index=0,
                 key="compression_type_select"
             )
-            include_transaction_logs = st.checkbox(
-                "Include Transaction Logs",
-                value=True,
-                key="include_logs_checkbox"
-            )
         
-        with col3:
-            st.markdown("**🎯 Requirements**")
-            time_sensitivity = st.selectbox(
-                "Time Sensitivity",
-                ["low", "medium", "high"],
-                index=1,
-                key="time_sensitivity_select"
-            )
-            cost_sensitivity = st.selectbox(
-                "Cost Sensitivity",
-                ["low", "medium", "high"],
-                index=1,
-                key="cost_sensitivity_select"
-            )
-    
-    # Calculate additional data if logs are included
-    if include_transaction_logs:
-        log_multiplier = 1.2  # 20% additional for transaction logs
-        effective_data_size = data_size_gb * log_multiplier
-    else:
-        effective_data_size = data_size_gb
-    
-    if st.button("🚀 Analyze Data Transfer Options", type="primary", use_container_width=True):
-        with st.spinner("Calculating transfer options and costs..."):
-            try:
-                # Convert DX bandwidth to Gbps
-                dx_gbps = float(dx_bandwidth.replace('Gbps', ''))
+        # Calculate effective data size
+        effective_data_size = data_size_gb * 1.2 if include_transaction_logs else data_size_gb
+        
+        if st.button("🚀 Calculate Transfer Options", type="primary", use_container_width=True):
+            with st.spinner("Calculating transfer options..."):
+                try:
+                    # Convert DX bandwidth to Gbps
+                    dx_gbps = float(dx_bandwidth.replace('Gbps', ''))
+                    
+                    # Calculate transfer analysis
+                    transfer_results = transfer_calculator.calculate_comprehensive_transfer_analysis(
+                        data_size_gb=effective_data_size,
+                        region=st.session_state.region,
+                        dx_bandwidth_gbps=dx_gbps,
+                        internet_bandwidth_mbps=internet_bandwidth,
+                        compression_type=compression_type
+                    )
+                    
+                    # Store results
+                    st.session_state.transfer_results = transfer_results
+                    st.session_state.transfer_data_size = effective_data_size
+                    
+                    st.success("✅ Transfer analysis complete!")
+                    
+                except Exception as e:
+                    st.error(f"❌ Error calculating transfer options: {str(e)}")
+        
+        # Display results if available
+        if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
+            transfer_results = st.session_state.transfer_results
+            data_size = st.session_state.transfer_data_size
+            
+            st.subheader("📊 Transfer Results")
+            
+            # Key metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            # Find fastest and cheapest methods
+            fastest_method = min(transfer_results.items(), key=lambda x: x[1].transfer_time_hours)
+            cheapest_method = min(transfer_results.items(), key=lambda x: x[1].total_cost)
+            
+            with col1:
+                st.metric("Total Data Size", f"{data_size:,.0f} GB")
+            
+            with col2:
+                st.metric("Fastest Transfer", f"{fastest_method[1].transfer_time_days:.1f} days")
+            
+            with col3:
+                st.metric("Lowest Cost", f"${cheapest_method[1].total_cost:.0f}")
+            
+            with col4:
+                # Calculate time savings
+                dx_time = transfer_results.get('datasync_dx', fastest_method[1]).transfer_time_days
+                internet_time = transfer_results.get('datasync_internet', fastest_method[1]).transfer_time_days
+                time_saved = max(0, internet_time - dx_time)
+                st.metric("Time Saved (DX)", f"{time_saved:.1f} days")
+            
+            # Results table
+            st.subheader("📋 Transfer Options Comparison")
+            
+            transfer_data = []
+            for method, result in transfer_results.items():
+                method_name = result.recommended_method
+                transfer_data.append({
+                    'Transfer Method': method_name,
+                    'Transfer Time': f"{result.transfer_time_days:.1f} days ({result.transfer_time_hours:.1f} hours)",
+                    'Total Cost': f"${result.total_cost:.2f}",
+                    'Bandwidth Utilization': f"{result.bandwidth_utilization:.0f}%",
+                    'Estimated Downtime': f"{result.estimated_downtime_hours:.1f} hours"
+                })
+            
+            transfer_df = pd.DataFrame(transfer_data)
+            st.dataframe(transfer_df, use_container_width=True)
+            
+            # Simple cost breakdown
+            st.subheader("💰 Cost Breakdown")
+            
+            for method, result in transfer_results.items():
+                with st.expander(f"{result.recommended_method} - ${result.total_cost:.2f}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown(f"**Transfer Time:** {result.transfer_time_days:.1f} days")
+                        st.markdown(f"**Estimated Downtime:** {result.estimated_downtime_hours:.1f} hours")
+                    
+                    with col2:
+                        if result.cost_breakdown:
+                            st.markdown("**Cost Components:**")
+                            for component, cost in result.cost_breakdown.items():
+                                component_name = component.replace('_', ' ').title()
+                                st.markdown(f"- {component_name}: ${cost:.2f}")
+            
+            # Simple recommendations
+            st.subheader("🎯 Recommendations")
+            
+            dx_result = transfer_results.get('datasync_dx')
+            internet_result = transfer_results.get('datasync_internet')
+            
+            if dx_result and internet_result:
+                time_savings = internet_result.transfer_time_hours - dx_result.transfer_time_hours
+                cost_difference = dx_result.total_cost - internet_result.total_cost
                 
-                # Calculate comprehensive transfer analysis
-                transfer_results = transfer_calculator.calculate_comprehensive_transfer_analysis(
-                    data_size_gb=effective_data_size,
-                    region=st.session_state.region,
-                    dx_bandwidth_gbps=dx_gbps,
-                    internet_bandwidth_mbps=internet_bandwidth,
-                    compression_type=compression_type
+                if time_savings > 24 and cost_difference < internet_result.total_cost * 0.5:  # Saves >1 day, <50% cost increase
+                    recommendation = "✅ **Recommended: DataSync over Direct Connect**"
+                    reasoning = f"Saves {time_savings/24:.1f} days for only ${cost_difference:.0f} additional cost"
+                elif cost_difference < 0:  # DX is actually cheaper
+                    recommendation = "✅ **Recommended: DataSync over Direct Connect**"
+                    reasoning = "Faster AND cheaper than internet transfer"
+                else:
+                    recommendation = "🌐 **Consider: DataSync over Internet**"
+                    reasoning = f"More cost-effective option (saves ${cost_difference:.0f})"
+                
+                st.markdown(f"""
+                <div class="advisory-box">
+                    <h4>{recommendation}</h4>
+                    <p><strong>Analysis:</strong> {reasoning}</p>
+                    <p><strong>Data Size:</strong> {data_size:,.0f} GB (including logs: {'Yes' if include_transaction_logs else 'No'})</p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Export option
+            st.subheader("📊 Export Transfer Analysis")
+            
+            if st.button("📥 Export Transfer Results CSV", use_container_width=True):
+                csv_data = transfer_df.to_csv(index=False)
+                st.download_button(
+                    label="Download CSV",
+                    data=csv_data,
+                    file_name=f"transfer_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
                 )
-                
-                # Store results in session state
-                st.session_state.transfer_results = transfer_results
-                st.session_state.transfer_data_size = effective_data_size
-                
-                st.success("✅ Transfer analysis complete!")
-                
-            except Exception as e:
-                st.error(f"❌ Error calculating transfer options: {str(e)}")
-    
-    # Display transfer results if available
-    if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
-        transfer_results = st.session_state.transfer_results
-        data_size = st.session_state.transfer_data_size
+    else:
+        st.info("💡 Configure server specifications in TAB 2 first to enable single server transfer analysis.")
+
+# Handle bulk analysis mode
+if st.session_state.current_analysis_mode == 'bulk':
+    if st.session_state.on_prem_servers:
+        # Simple bulk transfer analysis
+        st.info("🔄 Bulk transfer analysis: Calculate individual server transfers and sum the results")
         
-        st.subheader("📊 Transfer Analysis Results")
+        servers = st.session_state.on_prem_servers
+        total_data_gb = sum([server['storage_gb'] for server in servers]) * 1.2  # Include logs
         
-        # Key metrics
-        col1, col2, col3, col4 = st.columns(4)
-        
-        # Find the fastest and cheapest methods
-        fastest_method = min(transfer_results.items(), key=lambda x: x[1].transfer_time_hours)
-        cheapest_method = min(transfer_results.items(), key=lambda x: x[1].total_cost)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value">{data_size:,.0f}GB</div>
-                <div class="metric-label">Total Data Size</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value">{fastest_method[1].transfer_time_days:.1f}</div>
-                <div class="metric-label">Fastest Transfer (Days)</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value">${cheapest_method[1].total_cost:.0f}</div>
-                <div class="metric-label">Lowest Cost</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            recommended = transfer_calculator.get_recommended_method(
-                data_size, time_sensitivity, cost_sensitivity
-            )
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value">⭐</div>
-                <div class="metric-label">AI Recommended</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Visualizations
         col1, col2 = st.columns(2)
         
         with col1:
-            comparison_fig = create_transfer_time_comparison_chart(transfer_results)
-            if comparison_fig:
-                st.plotly_chart(comparison_fig, use_container_width=True)
+            bulk_dx_bandwidth = st.selectbox(
+                "Direct Connect Bandwidth",
+                ["1Gbps", "10Gbps", "100Gbps"],
+                index=1,
+                key="bulk_dx_bandwidth_select"
+            )
         
         with col2:
-            timeline_fig = create_transfer_timeline_chart(transfer_results, data_size)
-            if timeline_fig:
-                st.plotly_chart(timeline_fig, use_container_width=True)
+            parallel_transfers = st.checkbox(
+                "Enable Parallel Transfers",
+                value=True,
+                key="parallel_transfers_checkbox"
+            )
+            if parallel_transfers:
+                max_concurrent = st.number_input(
+                    "Max Concurrent Transfers",
+                    min_value=1,
+                    max_value=10,
+                    value=5,
+                    key="max_concurrent_transfers"
+                )
+            else:
+                max_concurrent = 1
         
-        # Detailed results table
-        st.subheader("📋 Detailed Transfer Options")
-        
-        transfer_data = []
-        for method, result in transfer_results.items():
-            transfer_data.append({
-                'Method': result.recommended_method,
-                'Transfer Time': f"{result.transfer_time_days:.1f} days ({result.transfer_time_hours:.1f} hours)",
-                'Total Cost': f"${result.total_cost:.2f}",
-                'Bandwidth Utilization': f"{result.bandwidth_utilization:.0f}%",
-                'Est. Downtime': f"{result.estimated_downtime_hours:.1f} hours",
-                'Primary Cost': f"${max(result.cost_breakdown.values()):.2f}"
-            })
-        
-        transfer_df = pd.DataFrame(transfer_data)
-        st.dataframe(transfer_df, use_container_width=True)
-        
-        # Detailed cost breakdown for each method
-        st.subheader("💰 Cost Breakdown Analysis")
-        
-        tabs = st.tabs([result.recommended_method.split()[0] for result in transfer_results.values()])
-        
-        for i, (method, result) in enumerate(transfer_results.items()):
-            with tabs[i]:
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.markdown(f"**{result.recommended_method}**")
-                    st.markdown(f"**Transfer Time:** {result.transfer_time_days:.1f} days")
-                    st.markdown(f"**Total Cost:** ${result.total_cost:.2f}")
-                    st.markdown(f"**Estimated Downtime:** {result.estimated_downtime_hours:.1f} hours")
+        if st.button("🚀 Calculate Bulk Transfer", type="primary", use_container_width=True):
+            with st.spinner("Calculating bulk transfer options..."):
+                try:
+                    bulk_dx_gbps = float(bulk_dx_bandwidth.replace('Gbps', ''))
+                    total_cost_dx = 0
+                    total_cost_internet = 0
+                    max_time_dx = 0
+                    max_time_internet = 0
                     
-                    if result.cost_breakdown:
-                        st.markdown("**Cost Components:**")
-                        for component, cost in result.cost_breakdown.items():
-                            component_name = component.replace('_', ' ').title()
-                            st.markdown(f"- {component_name}: ${cost:.2f}")
-                
-                with col2:
-                    cost_pie_fig = create_cost_breakdown_pie(result)
-                    if cost_pie_fig:
-                        st.plotly_chart(cost_pie_fig, use_container_width=True)
+                    for server in servers:
+                        server_data_gb = server['storage_gb'] * 1.2
+                        
+                        # Calculate effective bandwidth (divided if parallel)
+                        effective_dx_gbps = bulk_dx_gbps / max_concurrent if parallel_transfers else bulk_dx_gbps
+                        effective_internet_mbps = 1000 / max_concurrent if parallel_transfers else 1000
+                        
+                        server_results = transfer_calculator.calculate_comprehensive_transfer_analysis(
+                            data_size_gb=server_data_gb,
+                            region=st.session_state.region,
+                            dx_bandwidth_gbps=effective_dx_gbps,
+                            internet_bandwidth_mbps=effective_internet_mbps,
+                            compression_type='database'
+                        )
+                        
+                        # Accumulate costs and times
+                        dx_result = server_results['datasync_dx']
+                        internet_result = server_results['datasync_internet']
+                        
+                        total_cost_dx += dx_result.total_cost
+                        total_cost_internet += internet_result.total_cost
+                        
+                        if parallel_transfers:
+                            max_time_dx = max(max_time_dx, dx_result.transfer_time_days)
+                            max_time_internet = max(max_time_internet, internet_result.transfer_time_days)
+                        else:
+                            max_time_dx += dx_result.transfer_time_days
+                            max_time_internet += internet_result.transfer_time_days
+                    
+                    # Display bulk results
+                    st.subheader("📊 Bulk Transfer Results")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total Data", f"{total_data_gb:,.0f} GB")
+                    
+                    with col2:
+                        st.metric("DX Transfer Time", f"{max_time_dx:.1f} days")
+                    
+                    with col3:
+                        st.metric("DX Total Cost", f"${total_cost_dx:,.0f}")
+                    
+                    with col4:
+                        savings = max_time_internet - max_time_dx
+                        st.metric("Time Saved", f"{savings:.1f} days")
+                    
+                    # Comparison table
+                    bulk_comparison = pd.DataFrame([
+                        {
+                            'Method': 'DataSync over Direct Connect',
+                            'Transfer Time': f"{max_time_dx:.1f} days",
+                            'Total Cost': f"${total_cost_dx:,.0f}",
+                            'Servers': len(servers),
+                            'Parallel': 'Yes' if parallel_transfers else 'No'
+                        },
+                        {
+                            'Method': 'DataSync over Internet',
+                            'Transfer Time': f"{max_time_internet:.1f} days", 
+                            'Total Cost': f"${total_cost_internet:,.0f}",
+                            'Servers': len(servers),
+                            'Parallel': 'Yes' if parallel_transfers else 'No'
+                        }
+                    ])
+                    
+                    st.dataframe(bulk_comparison, use_container_width=True)
+                    
+                    # Store bulk results
+                    st.session_state.bulk_transfer_summary = {
+                        'total_data_gb': total_data_gb,
+                        'dx_time_days': max_time_dx,
+                        'dx_cost': total_cost_dx,
+                        'internet_time_days': max_time_internet,
+                        'internet_cost': total_cost_internet,
+                        'parallel_enabled': parallel_transfers,
+                        'server_count': len(servers)
+                    }
+                    
+                except Exception as e:
+                    st.error(f"❌ Error in bulk transfer calculation: {str(e)}")
+    else:
+        st.info("💡 Upload or add server specifications for bulk analysis first.")
 
+# If no transfer calculator available
+if not transfer_calculator:
+    st.error("❌ Data transfer calculator not available. Please check that data_transfer_calculator.py is in the correct location.")
 # ================================
 # TAB 4: FINANCIAL ANALYSIS
 # ================================
