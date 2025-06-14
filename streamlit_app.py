@@ -17,6 +17,15 @@ import tempfile
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from data_transfer_calculator import DataTransferCalculator, TransferMethod
+import io
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+
+
+
 # Add to imports section
 try:
     from enhanced_report_generator import EnhancedReportGenerator, StreamlitReportIntegration
@@ -293,6 +302,99 @@ def safe_get_str(dictionary, key, default="N/A"):
     if isinstance(dictionary, dict):
         return dictionary.get(key, default)
     return default
+# In streamlit_app.py, add this class after the utility functions section (around line 500-600)
+# Add after the existing utility functions and before the main app initialization
+
+class StreamlitEnhancedReportGenerator:
+    """Enhanced report generator integrated with Streamlit app"""
+    
+    def __init__(self):
+        self.setup_report_styles()
+    
+    def setup_report_styles(self):
+        """Setup report styles"""
+        # Report setup code here
+        pass
+    
+    def generate_bulk_report_in_chunks(self, servers_list, chunk_size=10):
+        """Generate bulk reports in chunks to manage memory"""
+        total_chunks = len(servers_list) // chunk_size + (1 if len(servers_list) % chunk_size else 0)
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        processed_results = []
+        for i in range(0, len(servers_list), chunk_size):
+            chunk = servers_list[i:i+chunk_size]
+            
+            # Update progress
+            progress = (i + chunk_size) / len(servers_list)
+            progress_bar.progress(min(progress, 1.0))
+            status_text.text(f"Processing servers {i+1}-{min(i+chunk_size, len(servers_list))} of {len(servers_list)}")
+            
+            # Process chunk
+            chunk_result = self._process_server_chunk(chunk)
+            processed_results.append(chunk_result)
+            
+            # Explicit garbage collection
+            import gc
+            gc.collect()
+        
+        progress_bar.progress(1.0)
+        status_text.text("Report generation complete!")
+        
+        return processed_results
+    
+    def _process_server_chunk(self, server_chunk):
+        """Process a chunk of servers for bulk analysis"""
+        chunk_data = []
+        for server in server_chunk:
+            # Use existing calculator to process individual server
+            try:
+                # Process using existing logic from streamlit app
+                server_analysis = self._analyze_server_for_report(server)
+                chunk_data.append(server_analysis)
+            except Exception as e:
+                st.warning(f"Error processing server {server.get('server_name', 'Unknown')}: {e}")
+                chunk_data.append({'error': str(e), 'server_name': server.get('server_name', 'Unknown')})
+        
+        return chunk_data
+    
+    def _analyze_server_for_report(self, server):
+        """Analyze individual server using existing calculator"""
+        # This would use the existing calculator logic
+        # You can reference st.session_state.calculator here
+        if st.session_state.calculator:
+            # Use existing calculation logic
+            inputs = {
+                "region": st.session_state.region,
+                "target_engine": st.session_state.target_engine,
+                "source_engine": server.get('database_engine', st.session_state.source_engine),
+                "deployment": st.session_state.deployment_option,
+                "storage_type": st.session_state.storage_type,
+                "on_prem_cores": server['cpu_cores'],
+                "peak_cpu_percent": server['peak_cpu_percent'],
+                "on_prem_ram_gb": server['ram_gb'],
+                "peak_ram_percent": server['peak_ram_percent'],
+                "storage_current_gb": server['storage_gb'],
+                "storage_growth_rate": 0.2,
+                "years": 3,
+                "enable_encryption": True,
+                "enable_perf_insights": True,
+                "enable_enhanced_monitoring": False,
+                "monthly_data_transfer_gb": 100,
+                "max_iops": server['max_iops'],
+                "max_throughput_mbps": server['max_throughput_mbps']
+            }
+            
+            return st.session_state.calculator.generate_comprehensive_recommendations(inputs)
+        
+        return {'error': 'Calculator not available'}
+
+# Initialize the enhanced report generator
+if 'enhanced_report_generator' not in st.session_state:
+    st.session_state.enhanced_report_generator = StreamlitEnhancedReportGenerator()
+
 
 # ================================
 # VISUALIZATION FUNCTIONS
@@ -781,6 +883,662 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+# ================================
+# ENHANCED REPORT GENERATOR
+# ================================
+# Add this section after the visualization functions (around line 700)
+# and before the initialization section (before "# Initialize session state")
+
+import io
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+
+class EnhancedReportGenerator:
+    """Enhanced PDF Report Generator for AWS RDS Migration Tool"""
+    
+    def __init__(self):
+        self.styles = getSampleStyleSheet()
+        self.setup_custom_styles()
+    
+    def setup_custom_styles(self):
+        """Setup custom styles for the report"""
+        # Title style
+        self.styles.add(ParagraphStyle(
+            name='CustomTitle',
+            parent=self.styles['Title'],
+            fontSize=24,
+            spaceAfter=30,
+            textColor=colors.darkblue,
+            alignment=1  # Center alignment
+        ))
+        
+        # Section header style
+        self.styles.add(ParagraphStyle(
+            name='SectionHeader',
+            parent=self.styles['Heading1'],
+            fontSize=16,
+            spaceBefore=20,
+            spaceAfter=12,
+            textColor=colors.darkblue,
+            borderWidth=2,
+            borderColor=colors.lightblue,
+            borderPadding=5
+        ))
+        
+        # Subsection header style
+        self.styles.add(ParagraphStyle(
+            name='SubsectionHeader',
+            parent=self.styles['Heading2'],
+            fontSize=14,
+            spaceBefore=15,
+            spaceAfter=8,
+            textColor=colors.darkgreen
+        ))
+        
+        # Highlight style for important information
+        self.styles.add(ParagraphStyle(
+            name='Highlight',
+            parent=self.styles['Normal'],
+            fontSize=12,
+            textColor=colors.darkred,
+            backColor=colors.lightyellow,
+            borderWidth=1,
+            borderColor=colors.orange,
+            borderPadding=5
+        ))
+
+    def generate_comprehensive_pdf_report(self, analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
+        """Generate a comprehensive PDF report for both single and bulk analysis"""
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                              rightMargin=0.5*inch, leftMargin=0.5*inch,
+                              topMargin=1*inch, bottomMargin=1*inch)
+        
+        story = []
+        
+        # Title Page
+        story.extend(self._create_title_page(analysis_mode))
+        story.append(PageBreak())
+        
+        # Executive Summary
+        story.extend(self._create_executive_summary(analysis_results, analysis_mode, ai_insights))
+        story.append(PageBreak())
+        
+        # Migration Strategy Section
+        story.extend(self._create_migration_strategy_section(analysis_results, ai_insights))
+        story.append(PageBreak())
+        
+        if analysis_mode == 'single':
+            # Single Server Analysis
+            story.extend(self._create_single_server_analysis(analysis_results, server_specs))
+        else:
+            # Bulk Server Analysis
+            story.extend(self._create_bulk_server_analysis(analysis_results, server_specs))
+        
+        story.append(PageBreak())
+        
+        # Financial Analysis
+        story.extend(self._create_financial_analysis_section(analysis_results, analysis_mode))
+        story.append(PageBreak())
+        
+        # Data Transfer Analysis (if available)
+        if transfer_results:
+            story.extend(self._create_transfer_analysis_section(transfer_results))
+            story.append(PageBreak())
+        
+        # AI Insights Section
+        if ai_insights:
+            story.extend(self._create_ai_insights_section(ai_insights))
+            story.append(PageBreak())
+        
+        # Risk Assessment & Implementation
+        story.extend(self._create_risk_assessment_section(analysis_results, ai_insights))
+        
+        # Build the PDF
+        try:
+            doc.build(story)
+            buffer.seek(0)
+            return buffer.getvalue()
+        except Exception as e:
+            st.error(f"Error building PDF: {e}")
+            return None
+
+    def _create_title_page(self, analysis_mode):
+        """Create an enhanced title page"""
+        story = []
+        
+        # Main title
+        title_text = f"AWS RDS Migration & Sizing Report"
+        story.append(Paragraph(title_text, self.styles['CustomTitle']))
+        story.append(Spacer(1, 0.5*inch))
+        
+        # Analysis type
+        analysis_type = "Single Server Analysis" if analysis_mode == 'single' else "Bulk Server Analysis"
+        story.append(Paragraph(f"<b>{analysis_type}</b>", self.styles['Heading1']))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Generation details
+        generation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        story.append(Paragraph(f"<b>Generated:</b> {generation_time}", self.styles['Normal']))
+        story.append(Paragraph(f"<b>Report Type:</b> Comprehensive Analysis & Recommendations", self.styles['Normal']))
+        story.append(Paragraph(f"<b>Prepared for:</b> Enterprise Cloud Migration Team", self.styles['Normal']))
+        
+        story.append(Spacer(1, 1*inch))
+        
+        # Key highlights box
+        highlights = [
+            "✓ AI-Powered Sizing Recommendations",
+            "✓ Cost Optimization Analysis", 
+            "✓ Migration Risk Assessment",
+            "✓ Performance Optimization Strategy",
+            "✓ Implementation Roadmap"
+        ]
+        
+        highlights_text = "<br/>".join(highlights)
+        story.append(Paragraph(f"<b>Report Includes:</b><br/>{highlights_text}", self.styles['Highlight']))
+        
+        return story
+
+    def _create_executive_summary(self, analysis_results, analysis_mode, ai_insights):
+        """Create comprehensive executive summary"""
+        story = []
+        story.append(Paragraph("Executive Summary", self.styles['SectionHeader']))
+        
+        if analysis_mode == 'single':
+            # Single server executive summary
+            valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
+            if valid_results:
+                prod_result = valid_results.get('PROD', list(valid_results.values())[0])
+                total_monthly_cost = safe_get(prod_result, 'total_cost', 0)
+                
+                # Key metrics table
+                summary_data = [
+                    ['Metric', 'Value', 'Impact'],
+                    ['Monthly Cost', f'${total_monthly_cost:,.2f}', 'Baseline operational cost'],
+                    ['Annual Cost', f'${total_monthly_cost * 12:,.2f}', 'Total yearly investment'],
+                    ['Migration Type', 'Heterogeneous', 'Requires conversion planning'],
+                    ['Estimated Timeline', '3-4 months', 'Including testing & validation']
+                ]
+                
+                table = Table(summary_data, colWidths=[2*inch, 1.5*inch, 2.5*inch])
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                story.append(table)
+                story.append(Spacer(1, 20))
+                
+        else:
+            # Bulk analysis executive summary
+            total_servers = len(analysis_results)
+            successful_servers = sum(1 for result in analysis_results.values() if 'error' not in result)
+            total_monthly_cost = 0
+            
+            for server_results in analysis_results.values():
+                if 'error' not in server_results:
+                    result = server_results.get('PROD', list(server_results.values())[0])
+                    if 'error' not in result:
+                        total_monthly_cost += safe_get(result, 'total_cost', 0)
+            
+            # Bulk summary table
+            bulk_summary_data = [
+                ['Metric', 'Value', 'Analysis'],
+                ['Total Servers', str(total_servers), f'{successful_servers} successful analyses'],
+                ['Total Monthly Cost', f'${total_monthly_cost:,.2f}', 'All servers combined'],
+                ['Average Cost per Server', f'${total_monthly_cost/max(successful_servers,1):,.2f}', 'Cost distribution'],
+                ['Total Annual Cost', f'${total_monthly_cost * 12:,.2f}', 'Yearly investment'],
+                ['Migration Complexity', 'Mixed', 'Varies by server configuration']
+            ]
+            
+            table = Table(bulk_summary_data, colWidths=[2*inch, 1.5*inch, 2.5*inch])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkgreen),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgreen),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(table)
+            story.append(Spacer(1, 20))
+        
+        # AI insights summary
+        if ai_insights:
+            story.append(Paragraph("AI-Powered Key Insights", self.styles['SubsectionHeader']))
+            
+            risk_level = ai_insights.get('risk_level', 'UNKNOWN')
+            cost_optimization = ai_insights.get('cost_optimization_potential', 0) * 100
+            
+            ai_summary = f"""
+            <b>Migration Risk Assessment:</b> {risk_level}<br/>
+            <b>Cost Optimization Potential:</b> {cost_optimization:.1f}%<br/>
+            <b>Recommended Architecture:</b> {ai_insights.get('recommended_writers', 1)} Writer(s), {ai_insights.get('recommended_readers', 1)} Reader(s)<br/>
+            <b>Success Probability:</b> High with proper planning and execution
+            """
+            
+            story.append(Paragraph(ai_summary, self.styles['Highlight']))
+        
+        return story
+
+    def _create_migration_strategy_section(self, analysis_results, ai_insights):
+        """Create detailed migration strategy section"""
+        story = []
+        story.append(Paragraph("Migration Strategy & Planning", self.styles['SectionHeader']))
+        
+        # Migration approach
+        story.append(Paragraph("Migration Approach", self.styles['SubsectionHeader']))
+        
+        approach_text = """
+        This migration follows a comprehensive, phased approach designed to minimize risk and ensure business continuity.
+        The strategy incorporates industry best practices and leverages AWS native services for optimal results.
+        """
+        story.append(Paragraph(approach_text, self.styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Migration phases table
+        phases_data = [['Phase', 'Duration', 'Key Activities', 'Success Criteria']]
+        
+        phase_details = [
+            ('Assessment & Planning', '2-3 weeks', 'Schema analysis, workload assessment', 'Complete inventory & migration plan'),
+            ('Schema Conversion', '3-4 weeks', 'AWS SCT, manual refactoring', '100% schema compatibility'),
+            ('DMS Setup', '1-2 weeks', 'Replication instances, tasks', 'Successful initial sync'),
+            ('Testing & Validation', '4-5 weeks', 'Functional & performance testing', 'All tests passing'),
+            ('Cutover & Go-Live', '1 week', 'Final sync, DNS switch', 'Production operational'),
+            ('Optimization', '2-3 weeks', 'Performance tuning, monitoring', 'SLA compliance achieved')
+        ]
+        
+        for phase, duration, activities, criteria in phase_details:
+            phases_data.append([phase, duration, activities, criteria])
+        
+        phases_table = Table(phases_data, colWidths=[1.5*inch, 1*inch, 2*inch, 1.5*inch])
+        phases_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.navy),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP')
+        ]))
+        story.append(phases_table)
+        
+        return story
+
+    def _create_single_server_analysis(self, analysis_results, server_specs):
+        """Create detailed single server analysis section"""
+        story = []
+        story.append(Paragraph("Single Server Analysis", self.styles['SectionHeader']))
+        
+        valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
+        
+        for env, result in valid_results.items():
+            story.append(Paragraph(f"{env} Environment Configuration", self.styles['SubsectionHeader']))
+            
+            # Instance configuration table
+            config_data = [['Component', 'Specification', 'Performance Impact']]
+            
+            if 'writer' in result:
+                # Aurora cluster configuration
+                writer = result['writer']
+                config_data.extend([
+                    ['Writer Instance', safe_get_str(writer, 'instance_type', 'N/A'), 'Primary database operations'],
+                    ['Writer vCPUs', str(safe_get(writer, 'actual_vCPUs', 'N/A')), 'Compute capacity'],
+                    ['Writer RAM', f"{safe_get(writer, 'actual_RAM_GB', 'N/A')} GB", 'Memory for caching'],
+                    ['Storage', f"{safe_get(result, 'storage_GB', 'N/A')} GB", 'Data and index storage']
+                ])
+                
+                if result.get('readers'):
+                    for i, reader in enumerate(result['readers']):
+                        config_data.append([f'Reader {i+1}', safe_get_str(reader, 'instance_type', 'N/A'), 'Read scaling & availability'])
+            else:
+                # Standard RDS configuration
+                config_data.extend([
+                    ['Instance Type', safe_get_str(result, 'instance_type', 'N/A'), 'Compute and memory'],
+                    ['vCPUs', str(safe_get(result, 'actual_vCPUs', 'N/A')), 'Processing power'],
+                    ['RAM', f"{safe_get(result, 'actual_RAM_GB', 'N/A')} GB", 'Database caching'],
+                    ['Storage', f"{safe_get(result, 'storage_GB', 'N/A')} GB", 'Data storage capacity']
+                ])
+            
+            config_table = Table(config_data, colWidths=[1.5*inch, 2*inch, 2.5*inch])
+            config_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(config_table)
+            story.append(Spacer(1, 15))
+        
+        return story
+
+    def _create_bulk_server_analysis(self, analysis_results, server_specs):
+        """Create comprehensive bulk server analysis"""
+        story = []
+        story.append(Paragraph("Bulk Server Analysis", self.styles['SectionHeader']))
+        
+        # Summary statistics
+        total_servers = len(analysis_results)
+        successful_analyses = sum(1 for result in analysis_results.values() if 'error' not in result)
+        failed_analyses = total_servers - successful_analyses
+        
+        story.append(Paragraph(f"Analysis Summary: {successful_analyses} successful, {failed_analyses} failed out of {total_servers} total servers", self.styles['Normal']))
+        story.append(Spacer(1, 12))
+        
+        # Aggregate cost analysis
+        story.append(Paragraph("Cost Analysis by Server", self.styles['SubsectionHeader']))
+        
+        bulk_data = [['Server Name', 'Instance Type', 'Monthly Cost', 'Annual Cost', 'vCPUs', 'RAM (GB)']]
+        total_monthly_cost = 0
+        
+        for server_name, server_results in analysis_results.items():
+            if 'error' not in server_results:
+                result = server_results.get('PROD', list(server_results.values())[0])
+                if 'error' not in result:
+                    monthly_cost = safe_get(result, 'total_cost', 0)
+                    total_monthly_cost += monthly_cost
+                    
+                    instance_type = 'N/A'
+                    vcpus = 0
+                    ram_gb = 0
+                    
+                    if 'writer' in result:
+                        writer = result['writer']
+                        instance_type = safe_get_str(writer, 'instance_type', 'N/A')
+                        vcpus = safe_get(writer, 'actual_vCPUs', 0)
+                        ram_gb = safe_get(writer, 'actual_RAM_GB', 0)
+                        if result.get('readers'):
+                            instance_type += f" + {len(result['readers'])} readers"
+                    else:
+                        instance_type = safe_get_str(result, 'instance_type', 'N/A')
+                        vcpus = safe_get(result, 'actual_vCPUs', 0)
+                        ram_gb = safe_get(result, 'actual_RAM_GB', 0)
+                    
+                    bulk_data.append([
+                        server_name[:15],  # Truncate long names
+                        instance_type[:20],  # Truncate long instance types
+                        f'${monthly_cost:.2f}',
+                        f'${monthly_cost * 12:.2f}',
+                        str(vcpus),
+                        str(ram_gb)
+                    ])
+            else:
+                bulk_data.append([server_name[:15], 'ERROR', '$0.00', '$0.00', '0', '0'])
+        
+        # Add totals row
+        avg_monthly_cost = total_monthly_cost / max(successful_analyses, 1)
+        bulk_data.append([
+            'TOTALS/AVERAGES',
+            f'{successful_analyses} servers',
+            f'${total_monthly_cost:.2f}',
+            f'${total_monthly_cost * 12:.2f}',
+            f'Avg: ${avg_monthly_cost:.2f}',
+            ''
+        ])
+        
+        bulk_table = Table(bulk_data, colWidths=[1.2*inch, 1.3*inch, 1*inch, 1*inch, 0.7*inch, 0.8*inch])
+        bulk_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.purple),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -2), colors.lavender),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.yellow),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(bulk_table)
+        
+        return story
+
+    def _create_financial_analysis_section(self, analysis_results, analysis_mode):
+        """Create detailed financial analysis section"""
+        story = []
+        story.append(Paragraph("Financial Analysis & Cost Optimization", self.styles['SectionHeader']))
+        
+        # TCO Analysis
+        story.append(Paragraph("Total Cost of Ownership (TCO) Analysis", self.styles['SubsectionHeader']))
+        
+        if analysis_mode == 'single':
+            valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
+            if valid_results:
+                prod_result = valid_results.get('PROD', list(valid_results.values())[0])
+                monthly_cost = safe_get(prod_result, 'total_cost', 0)
+        else:
+            # Bulk TCO analysis
+            monthly_cost = 0
+            for server_results in analysis_results.values():
+                if 'error' not in server_results:
+                    result = server_results.get('PROD', list(server_results.values())[0])
+                    if 'error' not in result:
+                        monthly_cost += safe_get(result, 'total_cost', 0)
+        
+        # 3-year TCO projection
+        tco_data = [['Year', 'AWS Costs', 'OpEx Savings', 'Net Position']]
+        
+        for year in range(1, 4):
+            annual_aws_cost = monthly_cost * 12 * (1.03 ** (year - 1))  # 3% inflation
+            opex_savings = (200000 if analysis_mode == 'bulk' else 150000) + (year * 30000)
+            net_position = annual_aws_cost - opex_savings
+            
+            tco_data.append([
+                f'Year {year}',
+                f'${annual_aws_cost:,.0f}',
+                f'${opex_savings:,.0f}',
+                f'${net_position:,.0f}'
+            ])
+        
+        tco_table = Table(tco_data, colWidths=[1*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        tco_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkred),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.mistyrose),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(tco_table)
+        
+        return story
+
+    def _create_transfer_analysis_section(self, transfer_results):
+        """Create data transfer analysis section"""
+        story = []
+        story.append(Paragraph("Data Transfer Analysis", self.styles['SectionHeader']))
+        
+        # Transfer options comparison
+        transfer_data = [['Method', 'Transfer Time', 'Cost', 'Recommended Use']]
+        
+        for method, result in transfer_results.items():
+            transfer_data.append([
+                result.recommended_method,
+                f'{result.transfer_time_days:.1f} days',
+                f'${result.total_cost:.2f}',
+                'Time-critical' if result.transfer_time_hours < 24 else 'Cost-effective'
+            ])
+        
+        transfer_table = Table(transfer_data, colWidths=[1.5*inch, 1.5*inch, 1*inch, 2*inch])
+        transfer_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.orange),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.wheat),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(transfer_table)
+        
+        return story
+
+    def _create_ai_insights_section(self, ai_insights):
+        """Create AI insights section"""
+        story = []
+        story.append(Paragraph("AI-Powered Insights & Recommendations", self.styles['SectionHeader']))
+        
+        # AI analysis summary
+        if 'ai_analysis' in ai_insights:
+            story.append(Paragraph("Comprehensive AI Analysis", self.styles['SubsectionHeader']))
+            ai_text = ai_insights['ai_analysis'][:2000] + "..." if len(ai_insights['ai_analysis']) > 2000 else ai_insights['ai_analysis']
+            
+            # Split long AI text into paragraphs
+            ai_paragraphs = ai_text.split('. ')
+            for i in range(0, len(ai_paragraphs), 3):  # Group every 3 sentences
+                paragraph_text = '. '.join(ai_paragraphs[i:i+3])
+                if paragraph_text.strip():
+                    story.append(Paragraph(paragraph_text + ".", self.styles['Normal']))
+                    story.append(Spacer(1, 10))
+        
+        return story
+
+    def _create_risk_assessment_section(self, analysis_results, ai_insights):
+        """Create risk assessment and mitigation section"""
+        story = []
+        story.append(Paragraph("Risk Assessment & Implementation Roadmap", self.styles['SectionHeader']))
+        
+        # Risk matrix
+        risk_data = [
+            ['Risk Category', 'Probability', 'Impact', 'Mitigation Strategy'],
+            ['Schema Conversion', 'Medium', 'High', 'AWS SCT + Expert Review'],
+            ['Performance Issues', 'Low', 'Medium', 'Load Testing + Tuning'],
+            ['Data Corruption', 'Low', 'Critical', 'Validation Scripts + Checksums'],
+            ['Extended Downtime', 'Medium', 'High', 'Parallel Sync + Quick Cutover'],
+            ['Cost Overrun', 'Medium', 'Medium', 'Reserved Instances + Monitoring']
+        ]
+        
+        risk_table = Table(risk_data, colWidths=[1.5*inch, 1.2*inch, 1.2*inch, 2.1*inch])
+        risk_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.darkred),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.mistyrose),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP')
+        ]))
+        story.append(risk_table)
+        
+        # Implementation phases
+        story.append(Spacer(1, 20))
+        story.append(Paragraph("Implementation Phases", self.styles['SubsectionHeader']))
+        
+        phases_text = """
+        <b>Phase 1:</b> Assessment & Schema Analysis (2-4 weeks)<br/>
+        <b>Phase 2:</b> AWS SCT Schema Conversion (1-2 weeks)<br/>
+        <b>Phase 3:</b> DMS Setup & Initial Data Migration (1-2 weeks)<br/>
+        <b>Phase 4:</b> Application Code Conversion (4-8 weeks)<br/>
+        <b>Phase 5:</b> Testing & Validation (2-4 weeks)<br/>
+        <b>Phase 6:</b> Cutover & Go-Live (1 week)<br/>
+        <b>Phase 7:</b> Post-Migration Optimization (2-4 weeks)
+        """
+        
+        story.append(Paragraph(phases_text, self.styles['Highlight']))
+        
+        return story
+
+    def generate_bulk_report_in_chunks(self, servers_list, chunk_size=10):
+        """Generate bulk reports in chunks to manage memory"""
+        total_chunks = len(servers_list) // chunk_size + (1 if len(servers_list) % chunk_size else 0)
+        
+        processed_results = {}
+        
+        for i in range(0, len(servers_list), chunk_size):
+            chunk = servers_list[i:i+chunk_size]
+            
+            # Process chunk using existing Streamlit calculator
+            for server in chunk:
+                try:
+                    if st.session_state.calculator:
+                        inputs = {
+                            "region": st.session_state.region,
+                            "target_engine": st.session_state.target_engine,
+                            "source_engine": server.get('database_engine', st.session_state.source_engine),
+                            "deployment": st.session_state.deployment_option,
+                            "storage_type": st.session_state.storage_type,
+                            "on_prem_cores": server['cpu_cores'],
+                            "peak_cpu_percent": server['peak_cpu_percent'],
+                            "on_prem_ram_gb": server['ram_gb'],
+                            "peak_ram_percent": server['peak_ram_percent'],
+                            "storage_current_gb": server['storage_gb'],
+                            "storage_growth_rate": 0.2,
+                            "years": 3,
+                            "enable_encryption": True,
+                            "enable_perf_insights": True,
+                            "enable_enhanced_monitoring": False,
+                            "monthly_data_transfer_gb": 100,
+                            "max_iops": server['max_iops'],
+                            "max_throughput_mbps": server['max_throughput_mbps']
+                        }
+                        
+                        server_results = st.session_state.calculator.generate_comprehensive_recommendations(inputs)
+                        processed_results[server['server_name']] = server_results
+                    else:
+                        processed_results[server['server_name']] = {'error': 'Calculator not available'}
+                        
+                except Exception as e:
+                    processed_results[server['server_name']] = {'error': str(e)}
+            
+            # Explicit garbage collection
+            import gc
+            gc.collect()
+        
+        return processed_results
+
+# ================================
+# STREAMLIT INTEGRATION HELPER
+# ================================
+
+def generate_enhanced_pdf_report(analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
+    """Helper function to generate enhanced PDF report in Streamlit"""
+    try:
+        enhanced_generator = EnhancedReportGenerator()
+        
+        pdf_bytes = enhanced_generator.generate_comprehensive_pdf_report(
+            analysis_results=analysis_results,
+            analysis_mode=analysis_mode,
+            server_specs=server_specs,
+            ai_insights=ai_insights,
+            transfer_results=transfer_results
+        )
+        
+        return pdf_bytes
+        
+    except Exception as e:
+        st.error(f"Error generating enhanced PDF report: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None
+
+# ================================
+# END OF ENHANCED REPORT GENERATOR
+# ================================
+
 
 # Initialize session state
 if 'calculator' not in st.session_state:
