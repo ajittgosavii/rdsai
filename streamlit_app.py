@@ -2527,8 +2527,6 @@ with tab5:
 # ================================
 # TAB 6: REPORTS
 # ================================
-
-with tab6:
 # In TAB 6: Reports section, around line 1800-2000
 # Replace the existing bulk report generation code with:
 
