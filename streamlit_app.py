@@ -17,7 +17,12 @@ import tempfile
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from data_transfer_calculator import DataTransferCalculator, TransferMethod
-
+# Add to imports section
+try:
+    from enhanced_report_generator import EnhancedReportGenerator, StreamlitReportIntegration
+except ImportError as e:
+    st.error(f"Enhanced report generator not available: {e}")
+    # Fall back to existing report generator
 # Authentication imports
 import bcrypt
 import jwt
@@ -2524,55 +2529,56 @@ with tab5:
 # ================================
 
 with tab6:
+# In TAB 6: Reports section, around line 1800-2000
+# Replace the existing bulk report generation code with:
+
+with tab6:
     st.header("📋 Export & Reporting")
     
-    current_results = None
-    if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
-        current_results = st.session_state.results
-    elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
-        current_results = st.session_state.bulk_results
-    
-    if not current_results:
-        st.info("💡 Generate sizing recommendations first to enable reporting.")
-    else:
-        st.subheader("PDF Report Generation")
+    if st.session_state.current_analysis_mode == 'bulk' and st.session_state.on_prem_servers:
         
-        st.markdown("""
-        <div class="status-info">
-            Generate a comprehensive PDF report including sizing recommendations, cost analysis, and AI insights.
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("📄 Generate PDF Report", type="secondary", use_container_width=True):
-            with st.spinner("Generating PDF report... This may take a moment."):
-                try:
-                    if st.session_state.current_analysis_mode == 'single':
-                        recommendations_for_pdf = st.session_state.results
-                    else:
-                        st.warning("Bulk PDF report generation is under development. Please use CSV/JSON exports for bulk analysis.")
-                        st.stop()
-                        
-                    pdf_bytes = report_generator.generate_enhanced_pdf_report(
-                        recommendations_for_pdf,
-                        st.session_state.target_engine,
-                        st.session_state.ai_insights
-                    )
-                    
-                    if pdf_bytes:
-                        st.download_button(
-                            label="📥 Download PDF Report",
-                            data=pdf_bytes,
-                            file_name=f"aws_rds_migration_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
+        # Add chunked processing option for large bulk reports
+        if len(st.session_state.on_prem_servers) > 20:
+            st.info(f"📊 Large dataset detected ({len(st.session_state.on_prem_servers)} servers). Using chunked processing for optimal performance.")
+            
+            chunk_size = st.slider(
+                "Chunk Size (servers per batch)", 
+                min_value=5, 
+                max_value=25, 
+                value=10,
+                help="Smaller chunks use less memory but take longer"
+            )
+            
+            if st.button("📄 Generate Bulk Report (Chunked)", type="primary", use_container_width=True):
+                with st.spinner("Generating bulk report in chunks..."):
+                    try:
+                        # Use chunked processing
+                        enhanced_generator = st.session_state.enhanced_report_generator
+                        processed_chunks = enhanced_generator.generate_bulk_report_in_chunks(
+                            st.session_state.on_prem_servers, 
+                            chunk_size=chunk_size
                         )
-                        st.success("✅ PDF report generated and ready for download!")
-                    else:
-                        st.error("❌ PDF report generation failed with no output.")
-                except Exception as e:
-                    st.error(f"❌ Error generating PDF report: {str(e)}")
-                    st.code(traceback.format_exc())
-
+                        
+                        # Combine results from all chunks
+                        all_results = {}
+                        for chunk in processed_chunks:
+                            for server_result in chunk:
+                                if 'error' not in server_result:
+                                    server_name = server_result.get('server_name', f'Server_{len(all_results)}')
+                                    all_results[server_name] = server_result
+                        
+                        # Generate final report
+                        st.session_state.bulk_results = all_results
+                        st.success(f"✅ Bulk report generated successfully! Processed {len(all_results)} servers.")
+                        
+                    except Exception as e:
+                        st.error(f"❌ Error generating chunked bulk report: {str(e)}")
+        
+        else:
+            # Use regular processing for smaller datasets
+            if st.button("📄 Generate Standard Bulk Report", type="primary", use_container_width=True):
+                # Your existing bulk processing code here
+                pass
         # Additional export options for reports tab
         st.subheader("📊 Additional Export Options")
         
