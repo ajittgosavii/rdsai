@@ -814,8 +814,7 @@ st.markdown("""
         padding: 1.5rem;
         border-radius: 12px;
         margin: 1rem 0;
-    }
-    
+    }    
     .advisory-box {
         background: #f8f9fa;
         border: 1px solid #dee2e6;
@@ -823,15 +822,13 @@ st.markdown("""
         padding: 1rem;
         margin: 0.5rem 0;
         border-left: 4px solid #007bff;
-    }
-    
+    }    
     .phase-timeline {
         background: linear-gradient(90deg, #a8edea 0%, #fed6e3 100%);
         padding: 1rem;
         border-radius: 8px;
         margin: 0.5rem 0;
-    }
-    
+    }    
     .chart-container {
         background: #ffffff;
         border: 1px solid #e0e0e0;
@@ -839,32 +836,28 @@ st.markdown("""
         padding: 1rem;
         margin: 0.5rem 0;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
+    }    
     .writer-box {
         background: #e3f2fd;
         border: 2px solid #2196f3;
         border-radius: 8px;
         padding: 1rem;
         margin: 0.5rem 0;
-    }
-    
+    }    
     .reader-box {
         background: #f3e5f5;
         border: 2px solid #9c27b0;
         border-radius: 8px;
         padding: 1rem;
         margin: 0.5rem 0;
-    }
-    
+    }    
     .spec-section {
         background: #f8f9fa;
         border: 1px solid #dee2e6;
         border-radius: 8px;
         padding: 1.5rem;
         margin: 1rem 0;
-    }
-    
+    }    
     .bulk-upload-zone {
         border: 2px dashed #007bff;
         border-radius: 8px;
@@ -872,8 +865,7 @@ st.markdown("""
         text-align: center;
         background: #f8f9ff;
         margin: 1rem 0;
-    }
-    
+    }    
     .server-summary-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -1253,25 +1245,23 @@ class EnhancedReportGenerator:
                 result = server_results.get('PROD', list(server_results.values())[0])
                 if 'error' not in result:
                     monthly_cost = safe_get(result, 'total_cost', 0)
-                    total_monthly_cost += monthly_cost
-                    
+                    total_monthly_cost += monthly_cost                    
                     instance_type = 'N/A'
                     vcpus = 0
                     ram_gb = 0
                     
-                    if 'writer' in result:
+                if 'writer' in result:
                         writer = result['writer']
                         instance_type = safe_get_str(writer, 'instance_type', 'N/A')
                         vcpus = safe_get(writer, 'actual_vCPUs', 0)
                         ram_gb = safe_get(writer, 'actual_RAM_GB', 0)
                         if result.get('readers'):
                             instance_type += f" + {len(result['readers'])} readers"
-                    else:
+                else:
                         instance_type = safe_get_str(result, 'instance_type', 'N/A')
                         vcpus = safe_get(result, 'actual_vCPUs', 0)
-                        ram_gb = safe_get(result, 'actual_RAM_GB', 0)
-                    
-                    bulk_data.append([
+                        ram_gb = safe_get(result, 'actual_RAM_GB', 0)                    
+                        bulk_data.append([
                         server_name[:15],  # Truncate long names
                         instance_type[:20],  # Truncate long instance types
                         f'${monthly_cost:.2f}',
