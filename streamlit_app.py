@@ -1646,6 +1646,42 @@ else:
 st.markdown("---")
 
 # Main navigation
+
+# Inject mock data for testing PDF generation (remove in production)
+if 'bulk_results' not in st.session_state or not st.session_state.bulk_results:
+    st.session_state.bulk_results = {
+        'server1': {
+            'PROD': {
+                'total_cost': 1500,
+                'instance_type': 'db.m5.large',
+                'actual_vCPUs': 2,
+                'actual_RAM_GB': 8,
+                'storage_GB': 100,
+                'cost_breakdown': {
+                    'instance_monthly': 1200,
+                    'storage_monthly': 200,
+                    'backup_monthly': 100
+                },
+                'writer': {
+                    'instance_type': 'db.m5.large',
+                    'actual_vCPUs': 2,
+                    'actual_RAM_GB': 8
+                }
+            }
+        }
+    }
+    st.session_state.on_prem_servers = [{
+        'server_name': 'server1',
+        'cpu_cores': 2,
+        'ram_gb': 8,
+        'storage_gb': 100,
+        'peak_cpu_percent': 75,
+        'peak_ram_percent': 80,
+        'max_iops': 1000,
+        'max_throughput_mbps': 125,
+        'database_engine': 'oracle-ee'
+    }]
+
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🎯 Migration Planning", "🖥️ Server Specifications", "📊 Sizing Analysis", "💰 Financial Analysis", "🤖 AI Insights", "📋 Reports"])
 
 # ================================
