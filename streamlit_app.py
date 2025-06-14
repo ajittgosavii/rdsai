@@ -3278,7 +3278,34 @@ with tab5:
 # In TAB 6: Reports section, around line 1800-2000
 # Replace the existing bulk report generation code with:
 
+
 with tab6:
+    st.header("📋 PDF Report Generator")
+
+    if st.session_state.bulk_results:
+        if st.button("📄 Generate PDF Report"):
+            with st.spinner("Generating PDF..."):
+                pdf_bytes = generate_enhanced_pdf_report(
+                    analysis_results=st.session_state.bulk_results,
+                    analysis_mode='bulk',
+                    server_specs=st.session_state.on_prem_servers,
+                    ai_insights=st.session_state.ai_insights,
+                    transfer_results=st.session_state.transfer_results
+                )
+
+                if pdf_bytes:
+                    st.success("✅ PDF Report generated successfully!")
+                    st.download_button(
+                        label="📥 Download PDF",
+                        data=pdf_bytes,
+                        file_name="aws_migration_report.pdf",
+                        mime="application/pdf"
+                    )
+                else:
+                    st.error("Failed to generate the PDF report.")
+    else:
+        st.warning("Please run an analysis first before generating the report.")
+
     st.header("📋 Export & Reporting")
     
     if st.session_state.current_analysis_mode == 'bulk' and st.session_state.on_prem_servers:
