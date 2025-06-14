@@ -3150,7 +3150,7 @@ with tab4:
                 st.subheader("📈 Bulk Analysis Visualizations")
                 bulk_summary_fig = create_bulk_analysis_summary_chart(current_results)
                 if bulk_summary_fig:
-                    st.plotly_chart(bulk_summary_fig, use_container_width=True)
+                    st.plotly_chart(bulk_summary_fig, use_container_width=True, key='bulk_chart_unique')
             else:
                 st.info("No successful bulk analysis results to display.")
 
