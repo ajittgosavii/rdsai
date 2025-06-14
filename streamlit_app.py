@@ -1250,18 +1250,20 @@ class EnhancedReportGenerator:
                     vcpus = 0
                     ram_gb = 0
                     
-                if 'writer' in result:
-                        writer = result['writer']
-                        instance_type = safe_get_str(writer, 'instance_type', 'N/A')
-                        vcpus = safe_get(writer, 'actual_vCPUs', 0)
-                        ram_gb = safe_get(writer, 'actual_RAM_GB', 0)
-                        if result.get('readers'):
-                            instance_type += f" + {len(result['readers'])} readers"
-                else:
-                        instance_type = safe_get_str(result, 'instance_type', 'N/A')
-                        vcpus = safe_get(result, 'actual_vCPUs', 0)
-                        ram_gb = safe_get(result, 'actual_RAM_GB', 0)                    
-                        bulk_data.append([
+                    if 'writer' in result:
+                            writer = result['writer']
+                            instance_type = safe_get_str(writer, 'instance_type', 'N/A')
+                            vcpus = safe_get(writer, 'actual_vCPUs', 0)
+                            ram_gb = safe_get(writer, 'actual_RAM_GB', 0)
+                            if result.get('readers'):
+                                instance_type += f" + {len(result['readers'])} readers"
+                    else: # This else branch will handle standard RDS instances
+                            instance_type = safe_get_str(result, 'instance_type', 'N/A')
+                            vcpus = safe_get(result, 'actual_vCPUs', 0)
+                            ram_gb = safe_get(result, 'actual_RAM_GB', 0)
+                    
+                    # This append statement was previously misplaced inside the 'else' block
+                    bulk_data.append([
                         server_name[:15],  # Truncate long names
                         instance_type[:20],  # Truncate long instance types
                         f'${monthly_cost:.2f}',
@@ -1464,7 +1466,11 @@ class EnhancedReportGenerator:
             # Process chunk using existing Streamlit calculator
             for server in chunk:
                 try:
-                    if st.session_state.calculator:
+                    # Access st.session_state outside of a Streamlit callback function is tricky.
+                    # This method is part of EnhancedReportGenerator, which is instantiated in Streamlit.
+                    # It relies on st.session_state being available, which is usually the case in Streamlit context.
+                    # However, for robustness, ensure st.session_state.calculator is always available.
+                    if 'calculator' in st.session_state and st.session_state.calculator:
                         inputs = {
                             "region": st.session_state.region,
                             "target_engine": st.session_state.target_engine,
@@ -1499,6 +1505,7 @@ class EnhancedReportGenerator:
             gc.collect()
         
         return processed_results
+
 
 # ================================
 # STREAMLIT INTEGRATION HELPER
