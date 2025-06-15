@@ -379,12 +379,12 @@ class ComprehensiveReportGenerator:
             fontSize=11,
             spaceBefore=8,
             spaceAfter=6,
-            textColor=colors.darkslategray,
+            textColor=colors.darkslategrey,
             fontName='Helvetica',
             leftIndent=20,
             backColor=colors.whitesmoke,
             borderWidth=1,
-            borderColor=colors.lightgray,
+            borderColor=colors.lightgrey,
             borderPadding=5
         ))
         
