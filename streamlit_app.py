@@ -23,7 +23,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from comprehensive_pdf_generator import enhanced_report_generator, generate_ultra_comprehensive_pdf_report
 
 # Authentication imports
 import bcrypt
@@ -3293,17 +3292,12 @@ Cost Optimization Potential: {cost_opt_display}
 # TAB 6: REPORTS
 # ================================
 
-def create_enhanced_reports_tab():
-    """Enhanced reports tab with ultra-comprehensive PDF generation"""
-    
-    st.header("📋 Ultra-Comprehensive PDF Report Generator")
+with tab6:
+    st.header("📋 PDF Report Generator")
 
     current_analysis_results = None
     current_server_specs_for_pdf = None
-    migration_config_for_pdf = None
-    workload_characteristics_for_pdf = None
 
-    # Gather all available data
     if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
         current_analysis_results = st.session_state.results
         current_server_specs_for_pdf = st.session_state.get('current_server_spec')
@@ -3312,214 +3306,48 @@ def create_enhanced_reports_tab():
         current_analysis_results = st.session_state.bulk_results
         current_server_specs_for_pdf = st.session_state.get('on_prem_servers')
         analysis_mode_for_pdf = 'bulk'
-
-    # Gather migration configuration
-    if hasattr(st.session_state, 'source_engine'):
-        migration_config_for_pdf = {
-            'source_engine': st.session_state.source_engine,
-            'target_engine': st.session_state.target_engine,
-            'region': st.session_state.region,
-            'deployment_option': st.session_state.deployment_option,
-            'storage_type': st.session_state.storage_type
-        }
-
-    # Gather workload characteristics
-    if st.session_state.calculator and hasattr(st.session_state.calculator, 'workload_characteristics'):
-        workload_chars = st.session_state.calculator.workload_characteristics
-        if workload_chars:
-            workload_characteristics_for_pdf = {
-                'cpu_utilization_pattern': workload_chars.cpu_utilization_pattern,
-                'memory_usage_pattern': workload_chars.memory_usage_pattern,
-                'io_pattern': workload_chars.io_pattern,
-                'connection_count': workload_chars.connection_count,
-                'transaction_volume': workload_chars.transaction_volume,
-                'analytical_workload': workload_chars.analytical_workload
-            }
-
-    # Enhanced PDF Generation with comprehensive data
+    
+    # Enhanced PDF Generation with better error handling
     if current_analysis_results:
-        # Show comprehensive analysis summary
-        st.subheader("📊 Comprehensive Analysis Summary")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.info(f"✅ {analysis_mode_for_pdf.title()} analysis ready")
-            if analysis_mode_for_pdf == 'single':
-                if 'current_server_spec' in st.session_state:
-                    st.write(f"**Server:** {st.session_state.current_server_spec.get('server_name', 'Unknown')}")
-            else:
-                successful_count = len([r for r in current_analysis_results.values() if 'error' not in r])
-                st.write(f"**Servers:** {successful_count} analyzed successfully")
-        
-        with col2:
-            if st.session_state.ai_insights:
-                st.success("🤖 AI insights available")
-                risk_level = st.session_state.ai_insights.get('risk_level', 'Unknown')
-                st.write(f"**Risk Level:** {risk_level}")
-            else:
-                st.warning("⚠️ No AI insights")
-        
-        with col3:
-            if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
-                st.success("🚛 Transfer analysis included")
-                methods_count = len(st.session_state.transfer_results)
-                st.write(f"**Methods:** {methods_count} analyzed")
-            else:
-                st.info("💡 No transfer analysis")
-
-        # Data completeness indicator
-        st.subheader("📋 Report Data Completeness")
-        
-        data_completeness = []
-        
-        # Core analysis
-        if current_analysis_results:
-            data_completeness.append("✅ Core sizing analysis")
+        # Show current analysis summary
+        st.subheader("📊 Current Analysis Summary")
+        if analysis_mode_for_pdf == 'single':
+            st.info(f"✅ Single server analysis ready for PDF generation")
+            if 'current_server_spec' in st.session_state:
+                st.write(f"**Server:** {st.session_state.current_server_spec.get('server_name', 'Unknown')}")
         else:
-            data_completeness.append("❌ Core sizing analysis")
+            successful_count = len([r for r in current_analysis_results.values() if 'error' not in r])
+            st.info(f"✅ Bulk analysis ready: {successful_count} successful servers")
         
-        # Server specifications
-        if current_server_specs_for_pdf:
-            data_completeness.append("✅ Server specifications")
-        else:
-            data_completeness.append("❌ Server specifications")
-        
-        # Migration configuration
-        if migration_config_for_pdf:
-            data_completeness.append("✅ Migration configuration")
-        else:
-            data_completeness.append("❌ Migration configuration")
-        
-        # Workload characteristics
-        if workload_characteristics_for_pdf:
-            data_completeness.append("✅ Workload characteristics")
-        else:
-            data_completeness.append("❌ Workload characteristics")
-        
-        # AI insights
+        # AI Insights Status
         if st.session_state.ai_insights:
-            data_completeness.append("✅ AI insights and recommendations")
+            st.success("🤖 AI insights available and will be included")
         else:
-            data_completeness.append("❌ AI insights and recommendations")
+            st.warning("⚠️ No AI insights available - PDF will be generated without AI analysis")
         
-        # Transfer analysis
+        # Transfer Results Status
         if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
-            data_completeness.append("✅ Data transfer analysis")
+            st.success("🚛 Transfer analysis available and will be included")
         else:
-            data_completeness.append("❌ Data transfer analysis")
+            st.info("💡 No transfer analysis - PDF will be generated without transfer section")
         
-        # Display completeness
-        for item in data_completeness:
-            st.write(item)
-        
-        # Calculate completeness percentage
-        available_components = len([item for item in data_completeness if item.startswith("✅")])
-        total_components = len(data_completeness)
-        completeness_pct = (available_components / total_components) * 100
-        
-        st.progress(completeness_pct / 100)
-        st.write(f"**Report Completeness:** {completeness_pct:.1f}% ({available_components}/{total_components} components)")
-
-        # Ultra-Comprehensive PDF Generation Options
-        st.subheader("⚙️ Ultra-Comprehensive PDF Generation Options")
-        
+        # PDF Generation Options
+        st.subheader("⚙️ PDF Generation Options")
         col1, col2 = st.columns(2)
         
         with col1:
-            include_detailed_specs = st.checkbox("Include Complete Input Specifications", value=True)
-            include_sizing_logic = st.checkbox("Include Sizing Calculation Logic", value=True)
-            include_performance_analysis = st.checkbox("Include Performance & Capacity Analysis", value=True)
-            include_comprehensive_costs = st.checkbox("Include Comprehensive Cost Breakdown", value=True)
+            include_detailed_specs = st.checkbox("Include Detailed Server Specifications", value=True)
+            include_cost_breakdown = st.checkbox("Include Cost Breakdown", value=True)
         
         with col2:
-            include_migration_strategy = st.checkbox("Include Detailed Migration Strategy", value=True)
-            include_risk_assessment = st.checkbox("Include Complete Risk Assessment", value=True)
-            include_implementation_roadmap = st.checkbox("Include Implementation Roadmap", value=True)
-            include_technical_appendices = st.checkbox("Include Technical Appendices", value=True)
-
-        # Report scope preview
-        with st.expander("📋 Ultra-Comprehensive Report Scope Preview"):
-            st.markdown("""
-            **This report will include ALL of the following sections:**
-            
-            **1. Enhanced Title Page**
-            - Complete metadata and report scope
-            - Analysis configuration summary
-            - Report capabilities overview
-            
-            **2. Table of Contents**
-            - Comprehensive section listing
-            - Page references and content descriptions
-            
-            **3. Executive Summary**
-            - Detailed key findings with metrics tables
-            - AI-powered strategic insights
-            - Current vs. recommended state comparison
-            
-            **4. Complete Input Specifications**
-            - Migration configuration details
-            - Server specifications (single or bulk)
-            - Workload characteristics analysis
-            
-            **5. Detailed Sizing Analysis**
-            - Configuration details with justifications
-            - Performance impact analysis
-            - Complete cost breakdown by component
-            
-            **6. Complete Financial Analysis**
-            - 5-year TCO projection with inflation
-            - Cost optimization opportunities
-            - Reserved Instance and Savings Plans analysis
-            
-            **7. Performance & Capacity Analysis**
-            - Resource utilization analysis
-            - Capacity planning and growth projections
-            - Scaling triggers and monitoring recommendations
-            
-            **8. Data Transfer Analysis** (if available)
-            - Transfer method comparison
-            - Detailed cost breakdown by method
-            - Implementation recommendations
-            
-            **9. Complete AI Analysis** (if available)
-            - AI assessment summary with confidence levels
-            - Complete AI analysis text
-            - AI-generated recommendations
-            
-            **10. Detailed Migration Strategy**
-            - Migration methodology and framework
-            - Phase-by-phase breakdown with deliverables
-            - Success criteria and validation steps
-            
-            **11. Risk Assessment & Mitigation**
-            - Comprehensive risk matrix
-            - Detailed mitigation strategies
-            - Contingency planning
-            
-            **12. Implementation Roadmap**
-            - Timeline overview and complexity analysis
-            - Detailed task breakdown by week
-            - Resource requirements and dependencies
-            
-            **13. Technical Appendices**
-            - AWS instance types reference
-            - Cost optimization checklist
-            - Migration execution checklist
-            """)
-
-        # Generate Ultra-Comprehensive PDF Button
-        if st.button("📄 Generate Ultra-Comprehensive PDF Report", type="primary", use_container_width=True):
-            with st.spinner("Generating Ultra-Comprehensive PDF Report... This may take 30-60 seconds due to the extensive content."):
+            include_migration_timeline = st.checkbox("Include Migration Timeline", value=True)
+            include_risk_assessment = st.checkbox("Include Risk Assessment", value=True)
+        
+        # Generate PDF Button with enhanced error handling
+        if st.button("📄 Generate Enhanced PDF Report", type="primary", use_container_width=True):
+            with st.spinner("Generating Enhanced PDF Report..."):
                 try:
-                    # Show progress
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    
-                    status_text.text("🔄 Initializing comprehensive report generator...")
-                    progress_bar.progress(10)
-                    
-                    # Validate comprehensive data
+                    # Validate inputs before PDF generation
                     validation_errors = []
                     
                     if not current_analysis_results:
@@ -3535,194 +3363,136 @@ def create_enhanced_reports_tab():
                         st.error("❌ Validation errors:")
                         for error in validation_errors:
                             st.write(f"• {error}")
-                        return
+                        st.stop()
                     
-                    status_text.text("🔄 Preparing comprehensive data structures...")
-                    progress_bar.progress(20)
+                    # Enhanced PDF generation with better error handling
+                    st.info("🔄 Initializing Enhanced Report Generator...")
                     
-                    # Prepare AI insights with fallback
+                    # Create enhanced generator instance
+                    enhanced_generator = EnhancedReportGenerator()
+                    
+                    st.info("🔄 Preparing report data...")
+                    
+                    # Prepare AI insights (ensure it's not None)
                     ai_insights_for_pdf = st.session_state.ai_insights if st.session_state.ai_insights else {
-                        "risk_level": "Not Assessed",
+                        "risk_level": "Unknown",
                         "cost_optimization_potential": 0,
-                        "ai_analysis": "AI insights were not available during this analysis. Manual assessment recommended."
+                        "ai_analysis": "AI insights were not available during analysis generation."
                     }
-                    
-                    status_text.text("🔄 Preparing transfer analysis data...")
-                    progress_bar.progress(30)
                     
                     # Prepare transfer results
                     transfer_results_for_pdf = None
                     if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
                         transfer_results_for_pdf = st.session_state.transfer_results
                     
-                    status_text.text("🔄 Generating comprehensive PDF content...")
-                    progress_bar.progress(50)
+                    st.info("🔄 Generating comprehensive PDF...")
                     
-                    # Generate ultra-comprehensive PDF
-                    pdf_bytes = generate_ultra_comprehensive_pdf_report(
+                    # Generate PDF with comprehensive error handling
+                    pdf_bytes = enhanced_generator.generate_comprehensive_pdf_report(
                         analysis_results=current_analysis_results,
                         analysis_mode=analysis_mode_for_pdf,
                         server_specs=current_server_specs_for_pdf,
                         ai_insights=ai_insights_for_pdf,
-                        transfer_results=transfer_results_for_pdf,
-                        migration_config=migration_config_for_pdf,
-                        workload_characteristics=workload_characteristics_for_pdf
+                        transfer_results=transfer_results_for_pdf
                     )
                     
-                    status_text.text("🔄 Finalizing PDF document...")
-                    progress_bar.progress(90)
-                    
                     if pdf_bytes:
-                        progress_bar.progress(100)
-                        status_text.text("✅ Ultra-comprehensive PDF generated successfully!")
+                        st.success("✅ Enhanced PDF Report generated successfully!")
                         
                         # Calculate file size
                         file_size_mb = len(pdf_bytes) / (1024 * 1024)
-                        st.success(f"📄 Ultra-Comprehensive PDF Generated! Size: {file_size_mb:.2f} MB")
+                        st.info(f"📄 PDF Size: {file_size_mb:.2f} MB")
                         
-                        # Generate filename with timestamp and analysis mode
+                        # Generate filename with timestamp
                         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                        filename = f"aws_rds_ultra_comprehensive_{analysis_mode_for_pdf}_{timestamp}.pdf"
+                        filename = f"aws_rds_migration_enhanced_{analysis_mode_for_pdf}_{timestamp}.pdf"
                         
-                        # Download button
                         st.download_button(
-                            label="📥 Download Ultra-Comprehensive PDF Report",
+                            label="📥 Download Enhanced PDF Report",
                             data=pdf_bytes,
                             file_name=filename,
                             mime="application/pdf",
                             use_container_width=True
                         )
                         
-                        # Show comprehensive report statistics
-                        st.subheader("📊 Report Statistics")
-                        
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric("Report Sections", "13+")
-                            st.metric("Data Completeness", f"{completeness_pct:.1f}%")
-                        
-                        with col2:
-                            st.metric("File Size", f"{file_size_mb:.2f} MB")
-                            if analysis_mode_for_pdf == 'single':
-                                st.metric("Analysis Type", "Single Server")
-                            else:
-                                successful_count = len([r for r in current_analysis_results.values() if 'error' not in r])
-                                st.metric("Servers Analyzed", successful_count)
-                        
-                        with col3:
-                            st.metric("AI Insights", "✅" if st.session_state.ai_insights else "❌")
-                            st.metric("Transfer Analysis", "✅" if transfer_results_for_pdf else "❌")
-                        
-                        # Report contents verification
-                        st.subheader("📋 Report Contents Verification")
-                        
-                        contents_included = [
-                            "✅ Enhanced Title Page & Metadata",
-                            "✅ Comprehensive Table of Contents",
-                            "✅ Executive Summary with Detailed Metrics",
-                            "✅ Complete Input Specifications",
-                            "✅ Detailed Sizing Analysis with Justifications",
-                            "✅ Complete Financial Analysis (5-year TCO)",
-                            "✅ Performance & Capacity Analysis",
-                            "✅ Detailed Migration Strategy & Phases",
-                            "✅ Comprehensive Risk Assessment",
-                            "✅ Implementation Roadmap with Tasks",
-                            "✅ Technical Appendices & Checklists"
+                        # Show report contents summary
+                        st.subheader("📋 Report Contents")
+                        contents = [
+                            "✅ Executive Summary",
+                            "✅ Migration Strategy & Planning",
+                            "✅ Technical Specifications",
+                            "✅ Financial Analysis",
+                            "✅ Risk Assessment"
                         ]
                         
                         if ai_insights_for_pdf and 'ai_analysis' in ai_insights_for_pdf:
-                            contents_included.append("✅ Complete AI Analysis & Recommendations")
-                        else:
-                            contents_included.append("⚠️ AI Analysis (limited - no API key provided)")
+                            contents.append("✅ AI-Powered Insights")
                         
                         if transfer_results_for_pdf:
-                            contents_included.append("✅ Comprehensive Data Transfer Analysis")
-                        else:
-                            contents_included.append("ℹ️ Data Transfer Analysis (not available)")
+                            contents.append("✅ Data Transfer Analysis")
                         
-                        for content in contents_included:
+                        for content in contents:
                             st.write(content)
-                        
-                        # Clear progress indicators
-                        progress_bar.empty()
-                        status_text.empty()
                     
                     else:
-                        st.error("❌ Failed to generate ultra-comprehensive PDF.")
+                        st.error("❌ Failed to generate PDF. The report generator returned None.")
                         st.info("💡 This could be due to:")
                         st.write("• Missing reportlab dependencies")
-                        st.write("• Memory constraints with large datasets")
-                        st.write("• Data formatting issues")
+                        st.write("• Memory issues with large datasets")
+                        st.write("• Data formatting problems")
                         
-                        # Offer JSON export as fallback
+                        # Offer alternative export
                         st.subheader("🔄 Alternative Export Options")
                         
-                        if st.button("📊 Export Complete Analysis as JSON (Fallback)", use_container_width=True):
+                        # JSON export as fallback
+                        if st.button("📊 Export Analysis as JSON (Fallback)", use_container_width=True):
                             export_data = {
-                                'report_metadata': {
-                                    'analysis_mode': analysis_mode_for_pdf,
-                                    'generated_at': datetime.now().isoformat(),
-                                    'report_version': '3.0_ultra_comprehensive',
-                                    'data_completeness_pct': completeness_pct
-                                },
+                                'analysis_mode': analysis_mode_for_pdf,
                                 'analysis_results': current_analysis_results,
                                 'server_specs': current_server_specs_for_pdf,
-                                'migration_config': migration_config_for_pdf,
-                                'workload_characteristics': workload_characteristics_for_pdf,
                                 'ai_insights': ai_insights_for_pdf,
-                                'transfer_results': transfer_results_for_pdf
+                                'transfer_results': transfer_results_for_pdf,
+                                'generated_at': datetime.now().isoformat()
                             }
                             
                             json_data = json.dumps(export_data, indent=2, default=str)
                             
                             st.download_button(
-                                label="📥 Download Complete JSON Report",
+                                label="📥 Download JSON Report",
                                 data=json_data,
-                                file_name=f"ultra_comprehensive_analysis_{timestamp}.json",
+                                file_name=f"analysis_report_{timestamp}.json",
                                 mime="application/json",
                                 use_container_width=True
                             )
                 
                 except ImportError as e:
                     st.error(f"❌ Missing required libraries for PDF generation: {e}")
-                    st.info("💡 Please ensure reportlab is installed: `pip install reportlab matplotlib`")
+                    st.info("💡 Please ensure reportlab is installed: `pip install reportlab`")
                 
                 except Exception as e:
-                    st.error(f"❌ Error generating ultra-comprehensive PDF report: {str(e)}")
+                    st.error(f"❌ Error generating enhanced PDF report: {str(e)}")
+                    st.code(traceback.format_exc())
                     
-                    # Enhanced error debugging
-                    with st.expander("🔍 Debug Information"):
-                        st.write("**Analysis Mode:**", analysis_mode_for_pdf)
-                        st.write("**Has Results:**", bool(current_analysis_results))
-                        st.write("**Has Specs:**", bool(current_server_specs_for_pdf))
-                        st.write("**Has Migration Config:**", bool(migration_config_for_pdf))
-                        st.write("**Has Workload Chars:**", bool(workload_characteristics_for_pdf))
-                        st.write("**Has AI Insights:**", bool(st.session_state.ai_insights))
-                        st.write("**Has Transfer Results:**", bool(hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results))
-                        st.code(str(e))
+                    # Show detailed error information
+                    st.subheader("🔍 Debug Information")
+                    st.write("**Analysis Mode:**", analysis_mode_for_pdf)
+                    st.write("**Has Results:**", bool(current_analysis_results))
+                    st.write("**Has Specs:**", bool(current_server_specs_for_pdf))
+                    st.write("**Has AI Insights:**", bool(st.session_state.ai_insights))
+                    st.write("**Has Transfer Results:**", bool(hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results))
     
     else:
-        st.warning("⚠️ Please run an analysis first (Single or Bulk) before generating the ultra-comprehensive PDF report.")
+        st.warning("⚠️ Please run an analysis first (Single or Bulk) before generating the PDF report.")
         
-        # Enhanced prerequisites guide
-        st.subheader("📋 Prerequisites for Ultra-Comprehensive PDF Generation")
-        
-        prerequisites = [
-            "1. **Configure Migration Settings** - Complete the Migration Planning tab",
-            "2. **Set Server Specifications** - Add server details in Server Specifications tab", 
-            "3. **Run Sizing Analysis** - Execute analysis in Sizing Analysis tab",
-            "4. **Optional: AI Insights** - Provide Anthropic API key for AI-powered recommendations",
-            "5. **Optional: Transfer Analysis** - Configure and run data transfer analysis",
-            "6. **Generate Report** - Return to this tab for ultra-comprehensive PDF generation"
-        ]
-        
-        for prereq in prerequisites:
-            st.write(prereq)
-        
-        st.info("💡 The more components you complete, the more comprehensive your PDF report will be!")
+        # Show what's needed
+        st.subheader("📋 Prerequisites for PDF Generation")
+        st.write("1. Configure migration settings in **Migration Planning** tab")
+        st.write("2. Set up server specifications in **Server Specifications** tab")
+        st.write("3. Run analysis in **Sizing Analysis** tab")
+        st.write("4. Optionally generate AI insights and transfer analysis")
+        st.write("5. Return to this tab to generate comprehensive PDF report")
 
-    # Additional export options remain the same as your original implementation
+    # Additional export options
     st.subheader("📊 Additional Export Options")
     
     col1, col2, col3 = st.columns(3)
@@ -3730,20 +3500,199 @@ def create_enhanced_reports_tab():
     with col1:
         st.markdown("**📈 Executive Summary**")
         if st.button("Generate Executive Summary", use_container_width=True):
-            # Your existing executive summary logic here
-            pass
+            if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+                valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v}
+                if valid_results:
+                    prod_result = valid_results.get('PROD', list(valid_results.values())[0])
+                    
+                    exec_summary = f"""
+# Executive Summary - AWS RDS Migration Analysis
+
+## Migration Overview
+- **Source Engine:** {st.session_state.source_engine}
+- **Target Engine:** {st.session_state.target_engine}
+- **Migration Type:** {st.session_state.calculator.migration_profile.migration_type.value.title() if st.session_state.calculator.migration_profile else 'Unknown'}
+
+## Cost Analysis
+- **Monthly Cost:** ${safe_get(prod_result, 'total_cost', 0):,.2f}
+- **Annual Cost:** ${safe_get(prod_result, 'total_cost', 0) * 12:,.2f}
+
+## Recommended Configuration
+"""
+                    if 'writer' in prod_result:
+                        writer_info = prod_result['writer']
+                        exec_summary += f"- **Writer Instance:** {safe_get_str(writer_info, 'instance_type', 'N/A')}\n"
+                        exec_summary += f"- **Writer Resources:** {safe_get(writer_info, 'actual_vCPUs', 0)} vCPUs, {safe_get(writer_info, 'actual_RAM_GB', 0)} GB RAM\n"
+                        if prod_result['readers']:
+                            exec_summary += f"- **Reader Instances:** {len(prod_result['readers'])} x {safe_get_str(prod_result['readers'][0], 'instance_type', 'N/A')}\n"
+                    else:
+                        exec_summary += f"- **Instance Type:** {safe_get_str(prod_result, 'instance_type', 'N/A')}\n"
+                        exec_summary += f"- **Resources:** {safe_get(prod_result, 'actual_vCPUs', 0)} vCPUs, {safe_get(prod_result, 'actual_RAM_GB', 0)} GB RAM\n"
+                    
+                    exec_summary += f"- **Storage:** {safe_get(prod_result, 'storage_GB', 0)} GB\n"
+                    
+                    if st.session_state.ai_insights and 'ai_analysis' in st.session_state.ai_insights:
+                        exec_summary += f"\n## AI Recommendations\n{st.session_state.ai_insights['ai_analysis'][:500]}...\n"
+                    
+                    st.download_button(
+                        label="📥 Download Executive Summary",
+                        data=exec_summary,
+                        file_name=f"executive_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+            elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+                # Generate Executive Summary for Bulk Analysis
+                total_servers_summary = len(st.session_state.bulk_results)
+                successful_servers_summary = sum(1 for result in st.session_state.bulk_results.values() if 'error' not in result)
+                total_monthly_cost_summary = sum(safe_get(result.get('PROD', {}), 'total_cost', 0) for result in st.session_state.bulk_results.values() if 'error' not in result)
+                
+                exec_summary_bulk = f"""
+# Executive Summary - AWS RDS Bulk Migration Analysis
+
+## Migration Overview
+- **Source Engine:** {st.session_state.source_engine}
+- **Target Engine:** {st.session_state.target_engine}
+- **Migration Type:** {st.session_state.calculator.migration_profile.migration_type.value.title() if st.session_state.calculator.migration_profile else 'Unknown'}
+
+## Aggregate Cost Analysis
+- **Total Servers Analyzed:** {total_servers_summary}
+- **Successful Analyses:** {successful_servers_summary}
+- **Total Monthly Cost (Aggregated):** ${total_monthly_cost_summary:,.2f}
+- **Total Annual Cost (Aggregated):** ${total_monthly_cost_summary * 12:,.2f}
+
+## Key AI Insights (Overall Migration)
+"""
+                if st.session_state.ai_insights and 'ai_analysis' in st.session_state.ai_insights:
+                    exec_summary_bulk += f"{st.session_state.ai_insights['ai_analysis'][:500]}...\n"
+                else:
+                    exec_summary_bulk += "No AI insights available for the overall bulk migration.\n"
+                
+                st.download_button(
+                    label="📥 Download Executive Summary",
+                    data=exec_summary_bulk,
+                    file_name=f"executive_summary_bulk_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
+            else:
+                st.info("Executive summary available after running an analysis.")
     
     with col2:
         st.markdown("**📋 Technical Specifications**")
         if st.button("Export Technical Specs", use_container_width=True):
-            # Your existing technical specs export logic here
-            pass
+            if st.session_state.current_analysis_mode == 'single' and 'current_server_spec' in st.session_state:
+                tech_specs = {
+                    'server_specification': st.session_state.current_server_spec,
+                    'migration_config': {
+                        'source_engine': st.session_state.source_engine,
+                        'target_engine': st.session_state.target_engine,
+                        'deployment_option': st.session_state.deployment_option,
+                        'region': st.session_state.region,
+                        'storage_type': st.session_state.storage_type
+                    },
+                    'recommendations': st.session_state.results,
+                    'generated_at': datetime.now().isoformat()
+                }
+                
+                tech_specs_json = json.dumps(tech_specs, indent=2, default=str)
+                
+                st.download_button(
+                    label="📥 Download Tech Specs",
+                    data=tech_specs_json,
+                    file_name=f"technical_specifications_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+            elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+                bulk_tech_specs = {
+                    'analysis_mode': 'bulk',
+                    'migration_config': {
+                        'source_engine': st.session_state.source_engine,
+                        'target_engine': st.session_state.target_engine,
+                        'deployment_option': st.session_state.deployment_option,
+                        'region': st.session_state.region,
+                        'storage_type': st.session_state.storage_type
+                    },
+                    'bulk_servers_specifications': st.session_state.on_prem_servers,
+                    'bulk_recommendations': st.session_state.bulk_results,
+                    'generated_at': datetime.now().isoformat()
+                }
+                bulk_tech_specs_json = json.dumps(bulk_tech_specs, indent=2, default=str)
+                st.download_button(
+                    label="📥 Download Bulk Tech Specs",
+                    data=bulk_tech_specs_json,
+                    file_name=f"technical_specifications_bulk_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+            else:
+                st.info("Technical specifications available after running an analysis.")
     
     with col3:
         st.markdown("**💰 Cost Analysis Report**")
         if st.button("Generate Cost Report", use_container_width=True):
-            # Your existing cost report logic here
-            pass
+            cost_analysis = {
+                'analysis_mode': st.session_state.current_analysis_mode,
+                'migration_type': st.session_state.calculator.migration_profile.migration_type.value if st.session_state.calculator.migration_profile else 'unknown',
+                'cost_summary': {},
+                'generated_at': datetime.now().isoformat()
+            }
+            
+            if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+                valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v}
+                cost_analysis['cost_summary'] = {
+                    'environments': {},
+                    'total_monthly': 0,
+                    'total_annual': 0
+                }
+                
+                for env, result in valid_results.items():
+                    monthly_cost = safe_get(result, 'total_cost', 0)
+                    cost_analysis['cost_summary']['environments'][env] = {
+                        'monthly_cost': monthly_cost,
+                        'annual_cost': monthly_cost * 12,
+                        'cost_breakdown': safe_get(result, 'cost_breakdown', {})
+                    }
+                    cost_analysis['cost_summary']['total_monthly'] += monthly_cost
+                
+                cost_analysis['cost_summary']['total_annual'] = cost_analysis['cost_summary']['total_monthly'] * 12
+            
+            elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+                cost_analysis['cost_summary'] = {
+                    'servers': {},
+                    'total_monthly': 0,
+                    'total_annual': 0,
+                    'average_monthly_per_server': 0
+                }
+                
+                successful_servers = 0
+                
+                for server_name, server_results in st.session_state.bulk_results.items():
+                    if 'error' not in server_results:
+                        result = server_results.get('PROD', list(server_results.values())[0])
+                        if 'error' not in result:
+                            monthly_cost = safe_get(result, 'total_cost', 0)
+                            cost_analysis['cost_summary']['servers'][server_name] = {
+                                'monthly_cost': monthly_cost,
+                                'annual_cost': monthly_cost * 12
+                            }
+                            cost_analysis['cost_summary']['total_monthly'] += monthly_cost
+                            successful_servers += 1
+                
+                cost_analysis['cost_summary']['total_annual'] = cost_analysis['cost_summary']['total_monthly'] * 12
+                cost_analysis['cost_summary']['average_monthly_per_server'] = cost_analysis['cost_summary']['total_monthly'] / max(successful_servers, 1)
+            
+            cost_report_json = json.dumps(cost_analysis, indent=2, default=str)
+            
+            st.download_button(
+                label="📥 Download Cost Report",
+                data=cost_report_json,
+                file_name=f"cost_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+
 # ================================
 # FOOTER
 # ================================
