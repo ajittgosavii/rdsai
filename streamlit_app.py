@@ -328,14 +328,34 @@ from reportlab.lib.colors import HexColor
 # FIXED COMPREHENSIVE REPORT GENERATOR CLASS
 # ================================
 
-class ComprehensiveReportGenerator:
-    """Enhanced PDF Report Generator with Charts and Detailed Analysis"""
+# ================================
+# IMPROVED COMPREHENSIVE REPORT GENERATOR CLASS
+# ================================
+
+import io
+import base64
+import tempfile
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
+class ImprovedReportGenerator:
+    """Enhanced PDF Report Generator with Better Formatting and Layout"""
     
     def __init__(self):
-        """Initialize the comprehensive report generator"""
+        """Initialize the improved report generator"""
         self.styles = getSampleStyleSheet()
-        self.chart_width = 6*inch
-        self.chart_height = 4*inch
+        self.chart_width = 5.5*inch
+        self.chart_height = 3.5*inch
         self.setup_custom_styles()
         
         # Debug: Verify styles are created
@@ -344,46 +364,41 @@ class ComprehensiveReportGenerator:
     def _verify_styles(self):
         """Verify that all required styles are available"""
         required_styles = [
-            'ComprehensiveTitle', 'ExecutiveHeader', 'DetailedSectionHeader', 
-            'SubsectionHeader', 'TechnicalSpec', 'KeyMetrics', 'CostAnalysis', 'RiskWarning'
+            'ReportTitle', 'SectionHeader', 'SubsectionHeader', 
+            'BodyText', 'KeyMetric', 'TableHeader', 'BulletPoint'
         ]
         
         for style_name in required_styles:
             if style_name not in self.styles.byName:
                 print(f"Warning: Style '{style_name}' not found. Creating fallback.")
-                # Create a simple fallback style
                 self._create_fallback_style(style_name)
     
     def _create_fallback_style(self, style_name):
         """Create a fallback style if the original creation failed"""
         try:
-            if style_name == 'SubsectionHeader':
+            base_style = self.styles['Normal']
+            if style_name == 'ReportTitle':
                 self.styles.add(ParagraphStyle(
-                    name='SubsectionHeader',
-                    parent=self.styles['Heading2'],
-                    fontSize=14,
-                    spaceBefore=15,
-                    spaceAfter=10,
-                    textColor=colors.black,  # Simplified color
-                    fontName='Helvetica-Bold'
+                    name='ReportTitle',
+                    parent=self.styles['Title'],
+                    fontSize=24,
+                    fontName='Helvetica-Bold',
+                    alignment=TA_CENTER
                 ))
-            elif style_name == 'TechnicalSpec':
+            elif style_name == 'SectionHeader':
                 self.styles.add(ParagraphStyle(
-                    name='TechnicalSpec',
-                    parent=self.styles['Normal'],
-                    fontSize=11,
-                    spaceBefore=8,
-                    spaceAfter=6,
-                    textColor=colors.black,
-                    fontName='Helvetica',
-                    leftIndent=20
+                    name='SectionHeader',
+                    parent=self.styles['Heading1'],
+                    fontSize=16,
+                    fontName='Helvetica-Bold',
+                    spaceBefore=20,
+                    spaceAfter=12
                 ))
-            # Add other fallbacks as needed
             else:
                 # Generic fallback
                 self.styles.add(ParagraphStyle(
                     name=style_name,
-                    parent=self.styles['Normal'],
+                    parent=base_style,
                     fontSize=12,
                     fontName='Helvetica'
                 ))
@@ -391,105 +406,103 @@ class ComprehensiveReportGenerator:
             print(f"Error creating fallback style {style_name}: {e}")
     
     def setup_custom_styles(self):
-        """Setup comprehensive custom styles for the report"""
+        """Setup improved custom styles for the report"""
         try:
-            # Enhanced Title style
+            # Report Title Style
             self.styles.add(ParagraphStyle(
-                name='ComprehensiveTitle',
+                name='ReportTitle',
                 parent=self.styles['Title'],
-                fontSize=28,
-                spaceAfter=30,
+                fontSize=24,
+                spaceBefore=0,
+                spaceAfter=20,
                 textColor=colors.darkblue,
-                alignment=1,
+                alignment=TA_CENTER,
                 fontName='Helvetica-Bold'
             ))
             
-            # Executive summary style
+            # Section Header Style
             self.styles.add(ParagraphStyle(
-                name='ExecutiveHeader',
-                parent=self.styles['Heading1'],
-                fontSize=18,
-                spaceBefore=25,
-                spaceAfter=15,
-                textColor=colors.darkgreen,
-                fontName='Helvetica-Bold'
-            ))
-            
-            # Section header style with background
-            self.styles.add(ParagraphStyle(
-                name='DetailedSectionHeader',
+                name='SectionHeader',
                 parent=self.styles['Heading1'],
                 fontSize=16,
                 spaceBefore=20,
                 spaceAfter=12,
                 textColor=colors.darkblue,
-                fontName='Helvetica-Bold'
+                fontName='Helvetica-Bold',
+                borderWidth=1,
+                borderColor=colors.darkblue,
+                borderPadding=5
             ))
             
-            # CRITICAL: SubsectionHeader style - simplified to avoid issues
+            # Subsection Header Style
             self.styles.add(ParagraphStyle(
                 name='SubsectionHeader',
                 parent=self.styles['Heading2'],
                 fontSize=14,
                 spaceBefore=15,
-                spaceAfter=10,
-                textColor=colors.darkblue,
-                fontName='Helvetica-Bold'
-            ))
-            
-            # Technical specification style - simplified colors
-            self.styles.add(ParagraphStyle(
-                name='TechnicalSpec',
-                parent=self.styles['Normal'],
-                fontSize=11,
-                spaceBefore=8,
-                spaceAfter=6,
-                textColor=colors.black,
-                fontName='Helvetica',
-                leftIndent=20
-            ))
-            
-            # Key metrics style - simplified
-            self.styles.add(ParagraphStyle(
-                name='KeyMetrics',
-                parent=self.styles['Normal'],
-                fontSize=14,
-                textColor=colors.darkred,
-                fontName='Helvetica-Bold',
-                alignment=1
-            ))
-            
-            # Cost analysis style - simplified
-            self.styles.add(ParagraphStyle(
-                name='CostAnalysis',
-                parent=self.styles['Normal'],
-                fontSize=12,
+                spaceAfter=8,
                 textColor=colors.darkgreen,
                 fontName='Helvetica-Bold'
             ))
             
-            # Warning/Risk style - simplified
+            # Body Text Style
             self.styles.add(ParagraphStyle(
-                name='RiskWarning',
+                name='BodyText',
+                parent=self.styles['Normal'],
+                fontSize=11,
+                spaceBefore=6,
+                spaceAfter=6,
+                textColor=colors.black,
+                fontName='Helvetica',
+                leading=14
+            ))
+            
+            # Key Metric Style
+            self.styles.add(ParagraphStyle(
+                name='KeyMetric',
                 parent=self.styles['Normal'],
                 fontSize=12,
                 textColor=colors.darkred,
-                fontName='Helvetica-Bold'
+                fontName='Helvetica-Bold',
+                alignment=TA_CENTER
+            ))
+            
+            # Table Header Style
+            self.styles.add(ParagraphStyle(
+                name='TableHeader',
+                parent=self.styles['Normal'],
+                fontSize=10,
+                textColor=colors.white,
+                fontName='Helvetica-Bold',
+                alignment=TA_CENTER
+            ))
+            
+            # Bullet Point Style
+            self.styles.add(ParagraphStyle(
+                name='BulletPoint',
+                parent=self.styles['Normal'],
+                fontSize=11,
+                spaceBefore=4,
+                spaceAfter=4,
+                leftIndent=20,
+                bulletIndent=10,
+                fontName='Helvetica'
             ))
             
         except Exception as e:
             print(f"Error setting up custom styles: {e}")
-            # Ensure at least basic styles exist
             self._create_basic_styles()
     
     def _create_basic_styles(self):
         """Create basic styles as fallback"""
         basic_styles = {
+            'ReportTitle': ('Title', 24),
+            'SectionHeader': ('Heading1', 16),
             'SubsectionHeader': ('Heading2', 14),
-            'TechnicalSpec': ('Normal', 11),
-            'KeyMetrics': ('Normal', 14),
-            'CostAnalysis': ('Normal', 12),
-            'RiskWarning': ('Normal', 12)
+            'BodyText': ('Normal', 11),
+            'KeyMetric': ('Normal', 12),
+            'TableHeader': ('Normal', 10),
+            'BulletPoint': ('Normal', 11)
         }
         
         for style_name, (parent, size) in basic_styles.items():
@@ -512,10 +525,157 @@ class ComprehensiveReportGenerator:
             print(f"Style '{style_name}' not found, using '{fallback}'")
             return self.styles[fallback]
     
-    def create_plotly_chart_image(self, fig, width=800, height=600):
-        """Convert Plotly figure to image for PDF inclusion"""
+    def create_improved_cost_chart(self, analysis_results, analysis_mode):
+        """Create an improved cost breakdown chart with better formatting"""
         try:
-            # Convert plotly figure to image bytes
+            if analysis_mode == 'single':
+                valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
+                if not valid_results:
+                    return None
+                
+                prod_result = valid_results.get('PROD', list(valid_results.values())[0])
+                
+                # Extract cost components with better logic
+                cost_data = {}
+                
+                if 'writer' in prod_result:
+                    # Aurora/RDS Cluster setup
+                    writer_cost = prod_result.get('cost_breakdown', {}).get('writer_monthly', 0)
+                    readers_cost = prod_result.get('cost_breakdown', {}).get('readers_monthly', 0)
+                    storage_cost = prod_result.get('cost_breakdown', {}).get('storage_monthly', 0)
+                    backup_cost = prod_result.get('cost_breakdown', {}).get('backup_monthly', 0)
+                    transfer_cost = prod_result.get('cost_breakdown', {}).get('transfer_monthly', 50)
+                    
+                    if writer_cost > 0:
+                        cost_data['Writer Instance'] = writer_cost
+                    if readers_cost > 0:
+                        cost_data['Reader Instances'] = readers_cost
+                    if storage_cost > 0:
+                        cost_data['Storage'] = storage_cost
+                    if backup_cost > 0:
+                        cost_data['Backup'] = backup_cost
+                    if transfer_cost > 0:
+                        cost_data['Data Transfer'] = transfer_cost
+                else:
+                    # Standard RDS setup
+                    cost_breakdown = prod_result.get('cost_breakdown', {})
+                    instance_cost = cost_breakdown.get('instance_monthly', prod_result.get('instance_cost', 0))
+                    storage_cost = cost_breakdown.get('storage_monthly', prod_result.get('storage_cost', 0))
+                    backup_cost = cost_breakdown.get('backup_monthly', storage_cost * 0.1)
+                    transfer_cost = cost_breakdown.get('transfer_monthly', 50)
+                    
+                    if instance_cost > 0:
+                        cost_data['Compute Instance'] = instance_cost
+                    if storage_cost > 0:
+                        cost_data['Storage'] = storage_cost
+                    if backup_cost > 0:
+                        cost_data['Backup'] = backup_cost
+                    if transfer_cost > 0:
+                        cost_data['Data Transfer'] = transfer_cost
+                
+                # Filter out zero values and ensure we have data
+                cost_data = {k: v for k, v in cost_data.items() if v > 0}
+                
+                if not cost_data:
+                    # Fallback data if no breakdown available
+                    total_cost = prod_result.get('total_cost', 0)
+                    cost_data = {
+                        'Database Instance': total_cost * 0.7,
+                        'Storage & Backup': total_cost * 0.25,
+                        'Data Transfer': total_cost * 0.05
+                    }
+                
+                # Create improved pie chart
+                colors_list = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
+                
+                fig = go.Figure(data=[go.Pie(
+                    labels=list(cost_data.keys()),
+                    values=list(cost_data.values()),
+                    hole=.4,
+                    textinfo='label+percent',
+                    textposition='outside',
+                    texttemplate='%{label}<br>%{percent}<br>$%{value:,.0f}',
+                    textfont={"size": 10},
+                    marker=dict(colors=colors_list[:len(cost_data)], line=dict(color='#FFFFFF', width=2))
+                )])
+                
+                fig.update_layout(
+                    title={
+                        'text': f'Monthly Cost Breakdown - ${sum(cost_data.values()):,.0f}',
+                        'x': 0.5,
+                        'font': {'size': 14, 'color': 'darkblue'},
+                        'y': 0.95
+                    },
+                    font=dict(size=10),
+                    showlegend=True,
+                    legend=dict(
+                        orientation="v", 
+                        yanchor="middle", 
+                        y=0.5, 
+                        xanchor="left", 
+                        x=1.05,
+                        font=dict(size=9)
+                    ),
+                    margin=dict(t=50, b=50, l=50, r=100),
+                    width=600,
+                    height=400
+                )
+                
+                return self.create_plotly_chart_image(fig, width=600, height=400)
+            
+            else:  # Bulk analysis
+                server_costs = []
+                server_names = []
+                
+                for server_name, server_results in analysis_results.items():
+                    if 'error' not in server_results:
+                        result = server_results.get('PROD', list(server_results.values())[0])
+                        if 'error' not in result:
+                            cost = result.get('total_cost', 0)
+                            if cost > 0:
+                                server_costs.append(cost)
+                                # Truncate long server names for better display
+                                display_name = server_name[:15] + '...' if len(server_name) > 15 else server_name
+                                server_names.append(display_name)
+                
+                if not server_costs:
+                    return None
+                
+                # Create improved bar chart for bulk analysis
+                fig = go.Figure(data=[go.Bar(
+                    x=server_names,
+                    y=server_costs,
+                    marker_color='lightblue',
+                    text=[f'${cost:,.0f}' for cost in server_costs],
+                    textposition='outside',
+                    textfont=dict(size=9)
+                )])
+                
+                fig.update_layout(
+                    title={
+                        'text': f'Monthly Cost by Server - Total: ${sum(server_costs):,.0f}',
+                        'x': 0.5,
+                        'font': {'size': 14, 'color': 'darkblue'}
+                    },
+                    xaxis_title='Server Name',
+                    yaxis_title='Monthly Cost ($)',
+                    font=dict(size=10),
+                    xaxis={'tickangle': 45, 'tickfont': {'size': 8}},
+                    margin=dict(t=50, b=80, l=70, r=50),
+                    width=700,
+                    height=400
+                )
+                
+                return self.create_plotly_chart_image(fig, width=700, height=400)
+                
+        except Exception as e:
+            print(f"Error creating cost chart: {e}")
+            return None
+    
+    def create_plotly_chart_image(self, fig, width=600, height=400):
+        """Convert Plotly figure to image for PDF inclusion with improved quality"""
+        try:
+            # Convert plotly figure to image bytes with high quality
             img_bytes = fig.to_image(format="png", width=width, height=height, scale=2)
             
             # Create a temporary file to store the image
@@ -523,139 +683,191 @@ class ComprehensiveReportGenerator:
                 tmp_file.write(img_bytes)
                 tmp_file.flush()
                 
-                # Create ReportLab Image object
+                # Create ReportLab Image object with appropriate sizing
                 img = Image(tmp_file.name, width=self.chart_width, height=self.chart_height)
                 return img
         except Exception as e:
             print(f"Error creating chart image: {e}")
             return None
     
-    def create_cost_breakdown_chart(self, analysis_results, analysis_mode):
-        """Create detailed cost breakdown chart"""
-        if analysis_mode == 'single':
-            valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
-            if not valid_results:
+    def create_improved_technical_table(self, analysis_results, server_specs, env_name):
+        """Create an improved technical specifications table"""
+        try:
+            result = analysis_results.get(env_name, {})
+            if 'error' in result:
                 return None
             
-            prod_result = valid_results.get('PROD', list(valid_results.values())[0])
+            # Table data with better formatting
+            table_data = [
+                ['Component', 'Current (On-Premises)', 'Recommended (AWS)', 'Improvement']
+            ]
             
-            # Extract cost components
-            if 'writer' in prod_result:
-                cost_data = {
-                    'Writer Instance': prod_result.get('cost_breakdown', {}).get('writer_monthly', 0),
-                    'Reader Instances': prod_result.get('cost_breakdown', {}).get('readers_monthly', 0),
-                    'Storage': prod_result.get('cost_breakdown', {}).get('storage_monthly', 0),
-                    'Backup': prod_result.get('cost_breakdown', {}).get('backup_monthly', 0),
-                    'Data Transfer': prod_result.get('cost_breakdown', {}).get('transfer_monthly', 0)
-                }
+            current_cpu = server_specs.get('cores', 0) if server_specs else 0
+            current_ram = server_specs.get('ram', 0) if server_specs else 0
+            current_storage = server_specs.get('storage', 0) if server_specs else 0
+            
+            if 'writer' in result:
+                # Aurora/RDS Cluster configuration
+                writer = result['writer']
+                recommended_cpu = writer.get('actual_vCPUs', 0)
+                recommended_ram = writer.get('actual_RAM_GB', 0)
+                recommended_storage = result.get('storage_GB', 0)
+                
+                table_data.extend([
+                    ['Writer Instance', 
+                     f"{current_cpu} cores", 
+                     f"{writer.get('instance_type', 'N/A')}", 
+                     f"{(recommended_cpu/max(current_cpu,1)):.1f}x CPU"],
+                    ['Writer Memory', 
+                     f"{current_ram} GB", 
+                     f"{recommended_ram} GB", 
+                     f"{(recommended_ram/max(current_ram,1)):.1f}x RAM"],
+                    ['Storage Capacity', 
+                     f"{current_storage} GB", 
+                     f"{recommended_storage} GB", 
+                     f"{(recommended_storage/max(current_storage,1)):.1f}x"],
+                ])
+                
+                if result.get('readers'):
+                    table_data.append([
+                        'Read Replicas', 
+                        'None', 
+                        f"{len(result['readers'])} instances", 
+                        'New capability'
+                    ])
+            
             else:
-                cost_breakdown = prod_result.get('cost_breakdown', {})
-                cost_data = {
-                    'Instance': cost_breakdown.get('instance_monthly', prod_result.get('instance_cost', 0)),
-                    'Storage': cost_breakdown.get('storage_monthly', prod_result.get('storage_cost', 0)),
-                    'Backup': cost_breakdown.get('backup_monthly', prod_result.get('storage_cost', 0) * 0.25),
-                    'Data Transfer': cost_breakdown.get('transfer_monthly', 50)
-                }
+                # Standard RDS configuration
+                recommended_cpu = result.get('actual_vCPUs', 0)
+                recommended_ram = result.get('actual_RAM_GB', 0)
+                recommended_storage = result.get('storage_GB', 0)
+                
+                table_data.extend([
+                    ['Instance Type', 
+                     'Physical Server', 
+                     result.get('instance_type', 'N/A'), 
+                     'Cloud Native'],
+                    ['CPU Cores', 
+                     f"{current_cpu} cores", 
+                     f"{recommended_cpu} vCPUs", 
+                     f"{(recommended_cpu/max(current_cpu,1)):.1f}x"],
+                    ['Memory', 
+                     f"{current_ram} GB", 
+                     f"{recommended_ram} GB", 
+                     f"{(recommended_ram/max(current_ram,1)):.1f}x"],
+                    ['Storage', 
+                     f"{current_storage} GB", 
+                     f"{recommended_storage} GB", 
+                     f"{(recommended_storage/max(current_storage,1)):.1f}x"]
+                ])
             
-            # Filter out zero values
-            cost_data = {k: v for k, v in cost_data.items() if v > 0}
+            # Create table with improved styling
+            col_widths = [1.8*inch, 1.6*inch, 1.8*inch, 1.2*inch]
+            tech_table = Table(table_data, colWidths=col_widths, repeatRows=1)
             
-            if not cost_data:
-                return None
+            # Enhanced table styling
+            tech_table.setStyle(TableStyle([
+                # Header styling
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 0), (-1, 0), 12),
+                
+                # Data rows styling
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.lightblue, colors.white]),
+                
+                # Left align the first column
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                
+                # Padding for better readability
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ]))
             
-            # Create pie chart
-            fig = go.Figure(data=[go.Pie(
-                labels=list(cost_data.keys()),
-                values=list(cost_data.values()),
-                hole=.3,
-                textinfo='label+percent+value',
-                texttemplate='%{label}<br>%{percent}<br>$%{value:,.0f}',
-                marker_colors=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
-            )])
+            return tech_table
             
-            fig.update_layout(
-                title={
-                    'text': 'Monthly Cost Breakdown by Component',
-                    'x': 0.5,
-                    'font': {'size': 16, 'color': 'darkblue'}
-                },
-                font=dict(size=12),
-                showlegend=True,
-                legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.01)
-            )
-            
-            return self.create_plotly_chart_image(fig)
-        
-        else:  # Bulk analysis
-            server_costs = []
-            server_names = []
-            
-            for server_name, server_results in analysis_results.items():
-                if 'error' not in server_results:
-                    result = server_results.get('PROD', list(server_results.values())[0])
-                    if 'error' not in result:
-                        server_costs.append(result.get('total_cost', 0))
-                        server_names.append(server_name)
-            
-            if not server_costs:
-                return None
-            
-            # Create bar chart for bulk analysis
-            fig = go.Figure(data=[go.Bar(
-                x=server_names,
-                y=server_costs,
-                marker_color='lightblue',
-                text=[f'${cost:,.0f}' for cost in server_costs],
-                textposition='auto'
-            )])
-            
-            fig.update_layout(
-                title='Monthly Cost by Server',
-                xaxis_title='Server Name',
-                yaxis_title='Monthly Cost ($)',
-                font=dict(size=12),
-                xaxis={'tickangle': 45}
-            )
-            
-            return self.create_plotly_chart_image(fig)
+        except Exception as e:
+            print(f"Error creating technical table for {env_name}: {e}")
+            return None
     
-    def generate_comprehensive_pdf_report(self, analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
-        """Generate comprehensive PDF report with charts and detailed analysis"""
+    def format_ai_insights_text(self, ai_text, max_line_length=80):
+        """Format AI insights text for better PDF display"""
+        if not ai_text:
+            return "No AI insights available."
+        
+        # Clean up the text
+        cleaned_text = ai_text.replace('...', '')
+        
+        # Split into sentences and paragraphs
+        sentences = cleaned_text.split('. ')
+        formatted_paragraphs = []
+        current_paragraph = ""
+        
+        for sentence in sentences:
+            if len(current_paragraph) + len(sentence) < max_line_length:
+                current_paragraph += sentence + ". "
+            else:
+                if current_paragraph:
+                    formatted_paragraphs.append(current_paragraph.strip())
+                current_paragraph = sentence + ". "
+        
+        if current_paragraph:
+            formatted_paragraphs.append(current_paragraph.strip())
+        
+        return formatted_paragraphs[:5]  # Limit to 5 paragraphs for PDF
+    
+    def generate_improved_pdf_report(self, analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
+        """Generate improved PDF report with better formatting and layout"""
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, 
-                              rightMargin=0.5*inch, leftMargin=0.5*inch,
-                              topMargin=1*inch, bottomMargin=1*inch)
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=A4, 
+            rightMargin=0.75*inch, 
+            leftMargin=0.75*inch,
+            topMargin=1*inch, 
+            bottomMargin=1*inch
+        )
         
         story = []
         
         try:
-            # Title Page with Executive Summary
-            story.extend(self._create_comprehensive_title_page(analysis_mode, analysis_results))
+            # Title Page
+            story.extend(self._create_title_page(analysis_mode, analysis_results))
             story.append(PageBreak())
             
-            # Executive Summary with Key Metrics
-            story.extend(self._create_detailed_executive_summary(analysis_results, analysis_mode, ai_insights))
+            # Executive Summary with Chart
+            story.extend(self._create_executive_summary(analysis_results, analysis_mode, ai_insights))
             story.append(PageBreak())
             
-            # Technical Analysis with Charts
-            story.extend(self._create_technical_analysis_section(analysis_results, analysis_mode, server_specs))
+            # Technical Analysis
+            story.extend(self._create_technical_analysis(analysis_results, analysis_mode, server_specs))
             story.append(PageBreak())
             
-            # Financial Analysis with Visualizations
-            story.extend(self._create_comprehensive_financial_analysis(analysis_results, analysis_mode))
+            # Financial Analysis
+            story.extend(self._create_financial_analysis(analysis_results, analysis_mode))
             story.append(PageBreak())
             
-            # Migration Strategy and Timeline
-            story.extend(self._create_detailed_migration_strategy(ai_insights))
+            # Migration Strategy
+            story.extend(self._create_migration_strategy())
             story.append(PageBreak())
             
-            # AI Insights and Recommendations
+            # AI Insights (if available)
             if ai_insights:
-                story.extend(self._create_comprehensive_ai_insights(ai_insights))
+                story.extend(self._create_ai_insights_section(ai_insights))
                 story.append(PageBreak())
             
             # Implementation Roadmap
-            story.extend(self._create_implementation_roadmap(analysis_results, analysis_mode))
+            story.extend(self._create_implementation_roadmap())
             
             # Build the PDF
             doc.build(story)
@@ -663,42 +875,41 @@ class ComprehensiveReportGenerator:
             return buffer.getvalue()
             
         except Exception as e:
-            print(f"Error building comprehensive PDF: {e}")
+            print(f"Error building improved PDF: {e}")
             import traceback
             traceback.print_exc()
             return None
     
-    def _create_comprehensive_title_page(self, analysis_mode, analysis_results):
-        """Create enhanced title page with summary metrics"""
+    def _create_title_page(self, analysis_mode, analysis_results):
+        """Create an improved title page"""
         story = []
         
-        # Main title - use safe_get_style
-        title_style = self.safe_get_style('ComprehensiveTitle', 'Title')
+        # Main title
+        title_style = self.safe_get_style('ReportTitle', 'Title')
         story.append(Paragraph("AWS RDS Migration & Sizing", title_style))
         story.append(Paragraph("Comprehensive Analysis Report", title_style))
+        story.append(Spacer(1, 0.5*inch))
+        
+        # Analysis type
+        analysis_type = "Single Server Analysis" if analysis_mode == 'single' else "Bulk Server Analysis"
+        section_style = self.safe_get_style('SectionHeader', 'Heading1')
+        story.append(Paragraph(analysis_type, section_style))
         story.append(Spacer(1, 0.3*inch))
         
-        # Analysis type and summary
-        analysis_type = "Single Server Analysis" if analysis_mode == 'single' else "Bulk Server Analysis"
-        header_style = self.safe_get_style('ExecutiveHeader', 'Heading1')
-        story.append(Paragraph(f"<b>{analysis_type}</b>", header_style))
-        story.append(Spacer(1, 0.2*inch))
-        
-        # Key metrics summary box
+        # Executive Summary
         if analysis_mode == 'single':
             valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
             if valid_results:
                 prod_result = valid_results.get('PROD', list(valid_results.values())[0])
                 monthly_cost = prod_result.get('total_cost', 0)
                 
-                summary_text = f"""
-                <b>Executive Summary</b><br/>
-                • Monthly Cloud Cost: ${monthly_cost:,.2f}<br/>
-                • Annual Investment: ${monthly_cost * 12:,.2f}<br/>
-                • Migration Type: Heterogeneous Database Migration<br/>
-                • Estimated Timeline: 12-16 weeks<br/>
-                • Risk Level: Medium (Manageable with proper planning)
-                """
+                summary_items = [
+                    f"Monthly Cloud Cost: ${monthly_cost:,.2f}",
+                    f"Annual Investment: ${monthly_cost * 12:,.2f}",
+                    "Migration Type: Heterogeneous Database Migration",
+                    "Estimated Timeline: 12-16 weeks",
+                    "Risk Level: Medium (Manageable with proper planning)"
+                ]
         else:
             total_servers = len(analysis_results)
             successful_servers = sum(1 for result in analysis_results.values() if 'error' not in result)
@@ -708,56 +919,66 @@ class ComprehensiveReportGenerator:
                 if 'error' not in result and 'PROD' in result
             )
             
-            summary_text = f"""
-            <b>Executive Summary</b><br/>
-            • Total Servers Analyzed: {total_servers}<br/>
-            • Successful Analyses: {successful_servers}<br/>
-            • Total Monthly Cost: ${total_monthly_cost:,.2f}<br/>
-            • Total Annual Investment: ${total_monthly_cost * 12:,.2f}<br/>
-            • Average Cost per Server: ${total_monthly_cost/max(successful_servers,1):,.2f}/month
-            """
+            summary_items = [
+                f"Total Servers Analyzed: {total_servers}",
+                f"Successful Analyses: {successful_servers}",
+                f"Total Monthly Cost: ${total_monthly_cost:,.2f}",
+                f"Total Annual Investment: ${total_monthly_cost * 12:,.2f}",
+                f"Average Cost per Server: ${total_monthly_cost/max(successful_servers,1):,.2f}/month"
+            ]
         
-        metrics_style = self.safe_get_style('KeyMetrics', 'Normal')
-        story.append(Paragraph(summary_text, metrics_style))
-        story.append(Spacer(1, 0.3*inch))
+        # Summary box
+        summary_style = self.safe_get_style('KeyMetric', 'Normal')
+        story.append(Paragraph("<b>Executive Summary</b>", summary_style))
+        
+        bullet_style = self.safe_get_style('BulletPoint', 'Normal')
+        for item in summary_items:
+            story.append(Paragraph(f"• {item}", bullet_style))
+        
+        story.append(Spacer(1, 0.5*inch))
         
         # Report metadata
+        body_style = self.safe_get_style('BodyText', 'Normal')
         generation_time = datetime.now().strftime("%B %d, %Y at %H:%M")
-        story.append(Paragraph(f"<b>Generated:</b> {generation_time}", self.styles['Normal']))
-        story.append(Paragraph("<b>Report Type:</b> Comprehensive Technical & Financial Analysis", self.styles['Normal']))
-        story.append(Paragraph("<b>Prepared for:</b> Enterprise Cloud Migration Team", self.styles['Normal']))
+        story.append(Paragraph(f"<b>Generated:</b> {generation_time}", body_style))
+        story.append(Paragraph("<b>Report Type:</b> Comprehensive Technical & Financial Analysis", body_style))
+        story.append(Paragraph("<b>Prepared for:</b> Enterprise Cloud Migration Team", body_style))
         
         return story
     
-    def _create_detailed_executive_summary(self, analysis_results, analysis_mode, ai_insights):
-        """Create detailed executive summary with charts"""
+    def _create_executive_summary(self, analysis_results, analysis_mode, ai_insights):
+        """Create improved executive summary with chart"""
         story = []
-        header_style = self.safe_get_style('ExecutiveHeader', 'Heading1')
-        story.append(Paragraph("Executive Summary & Key Findings", header_style))
+        
+        section_style = self.safe_get_style('SectionHeader', 'Heading1')
+        story.append(Paragraph("Executive Summary & Key Findings", section_style))
+        story.append(Spacer(1, 12))
         
         # Cost breakdown chart
-        cost_chart = self.create_cost_breakdown_chart(analysis_results, analysis_mode)
+        cost_chart = self.create_improved_cost_chart(analysis_results, analysis_mode)
         if cost_chart:
-            story.append(Spacer(1, 12))
             story.append(cost_chart)
-            story.append(Spacer(1, 12))
+            story.append(Spacer(1, 20))
         
-        # Executive findings
+        # Key findings
+        subsection_style = self.safe_get_style('SubsectionHeader', 'Heading2')
+        story.append(Paragraph("Key Findings & Recommendations:", subsection_style))
+        
+        body_style = self.safe_get_style('BodyText', 'Normal')
+        bullet_style = self.safe_get_style('BulletPoint', 'Normal')
+        
         if analysis_mode == 'single':
             valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
             if valid_results:
                 prod_result = valid_results.get('PROD', list(valid_results.values())[0])
                 monthly_cost = prod_result.get('total_cost', 0)
                 
-                findings_text = f"""
-                <b>Key Findings & Recommendations:</b><br/><br/>
-                • <b>Cost Efficiency:</b> Projected monthly operational cost of ${monthly_cost:,.2f} provides
-                  significant operational benefits over traditional on-premises infrastructure<br/><br/>
-                • <b>Performance Scaling:</b> AWS RDS configuration will provide improved performance
-                  and automatic scaling capabilities<br/><br/>
-                • <b>Risk Mitigation:</b> Multi-AZ deployment ensures 99.95% uptime SLA with automatic failover<br/><br/>
-                • <b>Operational Benefits:</b> Reduced maintenance overhead with managed database services
-                """
+                findings = [
+                    f"<b>Cost Efficiency:</b> Projected monthly operational cost of ${monthly_cost:,.2f} provides significant operational benefits over traditional on-premises infrastructure",
+                    "<b>Performance Scaling:</b> AWS RDS configuration will provide improved performance and automatic scaling capabilities",
+                    "<b>Risk Mitigation:</b> Multi-AZ deployment ensures 99.95% uptime SLA with automatic failover",
+                    "<b>Operational Benefits:</b> Reduced maintenance overhead with managed database services"
+                ]
         else:
             successful_servers = sum(1 for result in analysis_results.values() if 'error' not in result)
             total_monthly_cost = sum(
@@ -766,113 +987,43 @@ class ComprehensiveReportGenerator:
                 if 'error' not in result and 'PROD' in result
             )
             
-            findings_text = f"""
-            <b>Bulk Migration Key Findings:</b><br/><br/>
-            • <b>Scale Efficiency:</b> {successful_servers} servers successfully analyzed with total
-              monthly cost of ${total_monthly_cost:,.2f}<br/><br/>
-            • <b>Migration Approach:</b> Phased migration recommended with 3-5 servers per wave<br/><br/>
-            • <b>Cost Optimization:</b> Bulk Reserved Instance purchases can reduce costs by 30-40%<br/><br/>
-            • <b>Timeline:</b> Estimated 6-9 months for complete bulk migration with parallel streams
-            """
+            findings = [
+                f"<b>Scale Efficiency:</b> {successful_servers} servers successfully analyzed with total monthly cost of ${total_monthly_cost:,.2f}",
+                "<b>Migration Approach:</b> Phased migration recommended with 3-5 servers per wave",
+                "<b>Cost Optimization:</b> Bulk Reserved Instance purchases can reduce costs by 30-40%",
+                "<b>Timeline:</b> Estimated 6-9 months for complete bulk migration with parallel streams"
+            ]
         
-        cost_style = self.safe_get_style('CostAnalysis', 'Normal')
-        story.append(Paragraph(findings_text, cost_style))
+        for finding in findings:
+            story.append(Paragraph(f"• {finding}", bullet_style))
+            story.append(Spacer(1, 6))
         
         return story
     
-    def _create_technical_analysis_section(self, analysis_results, analysis_mode, server_specs):
-        """Create detailed technical analysis with performance charts"""
+    def _create_technical_analysis(self, analysis_results, analysis_mode, server_specs):
+        """Create improved technical analysis section"""
         story = []
-        header_style = self.safe_get_style('DetailedSectionHeader', 'Heading1')
-        story.append(Paragraph("Technical Analysis & Performance Assessment", header_style))
         
-        # Detailed technical specifications
+        section_style = self.safe_get_style('SectionHeader', 'Heading1')
+        story.append(Paragraph("Technical Analysis & Performance Assessment", section_style))
+        story.append(Spacer(1, 15))
+        
         if analysis_mode == 'single':
-            story.extend(self._create_single_server_technical_details(analysis_results, server_specs))
+            valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
+            
+            for env, result in valid_results.items():
+                subsection_style = self.safe_get_style('SubsectionHeader', 'Heading2')
+                story.append(Paragraph(f"{env} Environment Configuration", subsection_style))
+                story.append(Spacer(1, 10))
+                
+                tech_table = self.create_improved_technical_table(analysis_results, server_specs, env)
+                if tech_table:
+                    story.append(tech_table)
+                    story.append(Spacer(1, 20))
+        
         else:
+            # Bulk analysis summary table
             story.extend(self._create_bulk_technical_summary(analysis_results, server_specs))
-        
-        return story
-    
-    def _create_single_server_technical_details(self, analysis_results, server_specs):
-        """Create detailed single server technical analysis"""
-        story = []
-        
-        valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
-        if not valid_results:
-            return story
-        
-        for env, result in valid_results.items():
-            # Use safe_get_style instead of direct access
-            subsection_style = self.safe_get_style('SubsectionHeader', 'Heading2')
-            story.append(Paragraph(f"<b>{env} Environment Configuration</b>", subsection_style))
-            
-            # Create detailed technical table
-            tech_data = [['Component', 'Current (On-Prem)', 'Recommended (AWS)', 'Improvement Factor']]
-            
-            current_cpu = server_specs.get('cores', 0) if server_specs else 0
-            current_ram = server_specs.get('ram', 0) if server_specs else 0
-            current_storage = server_specs.get('storage', 0) if server_specs else 0
-            
-            if 'writer' in result:
-                writer = result['writer']
-                recommended_cpu = writer.get('actual_vCPUs', 0)
-                recommended_ram = writer.get('actual_RAM_GB', 0)
-                recommended_storage = result.get('storage_GB', 0)
-                
-                tech_data.extend([
-                    ['Writer Instance', 
-                     f"{current_cpu} cores", 
-                     f"{writer.get('instance_type', 'N/A')} ({recommended_cpu} vCPUs)", 
-                     f"{(recommended_cpu/max(current_cpu,1)):.1f}x"],
-                    ['Writer Memory', 
-                     f"{current_ram} GB", 
-                     f"{recommended_ram} GB", 
-                     f"{(recommended_ram/max(current_ram,1)):.1f}x"],
-                    ['Storage', 
-                     f"{current_storage} GB", 
-                     f"{recommended_storage} GB", 
-                     f"{(recommended_storage/max(current_storage,1)):.1f}x"]
-                ])
-                
-                if result.get('readers'):
-                    tech_data.append(['Read Replicas', 'None', f"{len(result['readers'])} instances", 'New capability'])
-            
-            else:
-                recommended_cpu = result.get('actual_vCPUs', 0)
-                recommended_ram = result.get('actual_RAM_GB', 0)
-                recommended_storage = result.get('storage_GB', 0)
-                
-                tech_data.extend([
-                    ['Instance Type', 
-                     'Physical Server', 
-                     result.get('instance_type', 'N/A'), 
-                     'Cloud Native'],
-                    ['CPU', 
-                     f"{current_cpu} cores", 
-                     f"{recommended_cpu} vCPUs", 
-                     f"{(recommended_cpu/max(current_cpu,1)):.1f}x"],
-                    ['Memory', 
-                     f"{current_ram} GB", 
-                     f"{recommended_ram} GB", 
-                     f"{(recommended_ram/max(current_ram,1)):.1f}x"]
-                ])
-            
-            # Create and style the table
-            tech_table = Table(tech_data, colWidths=[1.5*inch, 1.5*inch, 2*inch, 1*inch])
-            tech_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 11),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')
-            ]))
-            story.append(tech_table)
-            story.append(Spacer(1, 20))
         
         return story
     
@@ -904,44 +1055,53 @@ class ComprehensiveReportGenerator:
                         total_recommended_ram += result.get('actual_RAM_GB', 0)
                     total_recommended_storage += result.get('storage_GB', 0)
         
-        # Aggregate comparison table
+        # Create aggregate comparison table
+        subsection_style = self.safe_get_style('SubsectionHeader', 'Heading2')
+        story.append(Paragraph("Aggregate Resource Comparison", subsection_style))
+        story.append(Spacer(1, 10))
+        
         aggregate_data = [
             ['Resource Type', 'Current Total', 'Recommended Total', 'Efficiency Gain'],
-            ['Total vCPUs', str(total_current_cpu), str(total_recommended_cpu), f"{((total_recommended_cpu/max(total_current_cpu,1))-1)*100:.1f}%"],
-            ['Total RAM (GB)', f"{total_current_ram:,}", f"{total_recommended_ram:,}", f"{((total_recommended_ram/max(total_current_ram,1))-1)*100:.1f}%"],
-            ['Total Storage (GB)', f"{total_current_storage:,}", f"{total_recommended_storage:,}", f"{((total_recommended_storage/max(total_current_storage,1))-1)*100:.1f}%"],
-            ['Server Count', str(len(server_specs)) if server_specs else '0', str(successful_count), f"{(successful_count/max(len(server_specs) if server_specs else 1,1))*100:.0f}% success"]
+            ['Total vCPUs', f"{total_current_cpu}", f"{total_recommended_cpu}", f"{((total_recommended_cpu/max(total_current_cpu,1))-1)*100:+.1f}%"],
+            ['Total RAM (GB)', f"{total_current_ram:,}", f"{total_recommended_ram:,}", f"{((total_recommended_ram/max(total_current_ram,1))-1)*100:+.1f}%"],
+            ['Total Storage (GB)', f"{total_current_storage:,}", f"{total_recommended_storage:,}", f"{((total_recommended_storage/max(total_current_storage,1))-1)*100:+.1f}%"],
+            ['Server Count', f"{len(server_specs) if server_specs else 0}", f"{successful_count}", f"{(successful_count/max(len(server_specs) if server_specs else 1,1))*100:.0f}% success"]
         ]
         
-        aggregate_table = Table(aggregate_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        aggregate_table = Table(aggregate_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
         aggregate_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkgreen),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -1), colors.lightgreen),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ]))
         story.append(aggregate_table)
         
         return story
     
-    def _create_comprehensive_financial_analysis(self, analysis_results, analysis_mode):
-        """Create comprehensive financial analysis with detailed breakdown"""
+    def _create_financial_analysis(self, analysis_results, analysis_mode):
+        """Create improved financial analysis section"""
         story = []
-        header_style = self.safe_get_style('DetailedSectionHeader', 'Heading1')
-        story.append(Paragraph("Financial Analysis & ROI Projection", header_style))
         
-        # Cost analysis content
+        section_style = self.safe_get_style('SectionHeader', 'Heading1')
+        story.append(Paragraph("Financial Analysis & ROI Projection", section_style))
+        story.append(Spacer(1, 15))
+        
+        # Calculate costs
         if analysis_mode == 'single':
             valid_results = {k: v for k, v in analysis_results.items() if 'error' not in v}
             if valid_results:
                 prod_result = valid_results.get('PROD', list(valid_results.values())[0])
                 monthly_cost = prod_result.get('total_cost', 0)
                 
-                # Financial breakdown table
                 financial_data = [
                     ['Cost Component', 'Monthly', 'Annual', '3-Year Total'],
                     ['AWS Infrastructure', f'${monthly_cost:,.2f}', f'${monthly_cost*12:,.2f}', f'${monthly_cost*36:,.2f}'],
@@ -964,121 +1124,138 @@ class ComprehensiveReportGenerator:
                 ['Total Investment', f'${total_monthly_cost:,.2f}', f'${total_monthly_cost*16:,.2f}', f'${total_monthly_cost*42:,.2f}']
             ]
         
-        financial_table = Table(financial_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        # Create financial table
+        financial_table = Table(financial_data, colWidths=[2.2*inch, 1.4*inch, 1.4*inch, 1.4*inch])
         financial_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.darkred),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -2), colors.mistyrose),
             ('BACKGROUND', (0, -1), (-1, -1), colors.yellow),
             ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
         ]))
         story.append(financial_table)
         
         return story
     
-    def _create_detailed_migration_strategy(self, ai_insights):
-        """Create detailed migration strategy with timeline"""
+    def _create_migration_strategy(self):
+        """Create migration strategy section"""
         story = []
-        header_style = self.safe_get_style('DetailedSectionHeader', 'Heading1')
-        story.append(Paragraph("Migration Strategy & Implementation Timeline", header_style))
         
-        # Standard migration text
-        migration_text = """
-        <b>Migration Strategy Overview:</b><br/><br/>
-        • <b>Assessment Phase:</b> Complete discovery and compatibility analysis<br/>
-        • <b>Planning Phase:</b> Detailed migration planning and resource allocation<br/>
-        • <b>Execution Phase:</b> Phased migration with minimal downtime<br/>
-        • <b>Validation Phase:</b> Comprehensive testing and performance validation<br/>
-        • <b>Optimization Phase:</b> Post-migration tuning and optimization
-        """
+        section_style = self.safe_get_style('SectionHeader', 'Heading1')
+        story.append(Paragraph("Migration Strategy & Implementation Timeline", section_style))
+        story.append(Spacer(1, 15))
         
-        tech_style = self.safe_get_style('TechnicalSpec', 'Normal')
-        story.append(Paragraph(migration_text, tech_style))
+        subsection_style = self.safe_get_style('SubsectionHeader', 'Heading2')
+        story.append(Paragraph("Migration Strategy Overview:", subsection_style))
+        
+        bullet_style = self.safe_get_style('BulletPoint', 'Normal')
+        migration_phases = [
+            "<b>Assessment Phase:</b> Complete discovery and compatibility analysis",
+            "<b>Planning Phase:</b> Detailed migration planning and resource allocation",
+            "<b>Execution Phase:</b> Phased migration with minimal downtime",
+            "<b>Validation Phase:</b> Comprehensive testing and performance validation",
+            "<b>Optimization Phase:</b> Post-migration tuning and optimization"
+        ]
+        
+        for phase in migration_phases:
+            story.append(Paragraph(f"• {phase}", bullet_style))
+            story.append(Spacer(1, 6))
         
         return story
     
-    def _create_comprehensive_ai_insights(self, ai_insights):
-        """Create comprehensive AI insights section"""
+    def _create_ai_insights_section(self, ai_insights):
+        """Create improved AI insights section"""
         story = []
-        header_style = self.safe_get_style('DetailedSectionHeader', 'Heading1')
-        story.append(Paragraph("AI-Powered Insights & Recommendations", header_style))
+        
+        section_style = self.safe_get_style('SectionHeader', 'Heading1')
+        story.append(Paragraph("AI-Powered Insights & Recommendations", section_style))
+        story.append(Spacer(1, 15))
         
         # AI analysis
-        if 'ai_analysis' in ai_insights and ai_insights['ai_analysis']:
-            ai_text = ai_insights['ai_analysis']
+        ai_text = ai_insights.get("ai_analysis", "")
+        if ai_text:
+            formatted_paragraphs = self.format_ai_insights_text(ai_text)
             
-            # Split AI analysis into digestible paragraphs
-            tech_style = self.safe_get_style('TechnicalSpec', 'Normal')
-            if len(ai_text) > 500:
-                paragraphs = [ai_text[i:i+500] + "..." for i in range(0, len(ai_text), 500)]
-                for paragraph in paragraphs[:3]:  # Limit to first 3 paragraphs
-                    story.append(Paragraph(paragraph, tech_style))
-                    story.append(Spacer(1, 10))
-            else:
-                story.append(Paragraph(ai_text, tech_style))
+            body_style = self.safe_get_style('BodyText', 'Normal')
+            for paragraph in formatted_paragraphs:
+                story.append(Paragraph(paragraph, body_style))
+                story.append(Spacer(1, 10))
         else:
-            # Default AI insights text if none available
-            default_ai_text = """
-            <b>AI Analysis Summary:</b><br/><br/>
-            • Migration analysis indicates favorable conditions for AWS RDS migration<br/>
-            • Recommended architecture provides optimal balance of performance and cost<br/>
-            • Risk assessment suggests manageable migration with proper planning<br/>
-            • Cost optimization opportunities identified for long-term efficiency
-            """
-            tech_style = self.safe_get_style('TechnicalSpec', 'Normal')
-            story.append(Paragraph(default_ai_text, tech_style))
+            # Default AI insights
+            bullet_style = self.safe_get_style('BulletPoint', 'Normal')
+            default_insights = [
+                "Migration analysis indicates favorable conditions for AWS RDS migration",
+                "Recommended architecture provides optimal balance of performance and cost",
+                "Risk assessment suggests manageable migration with proper planning",
+                "Cost optimization opportunities identified for long-term efficiency"
+            ]
+            
+            for insight in default_insights:
+                story.append(Paragraph(f"• {insight}", bullet_style))
+                story.append(Spacer(1, 6))
         
         return story
     
-    def _create_implementation_roadmap(self, analysis_results, analysis_mode):
-        """Create detailed implementation roadmap"""
+    def _create_implementation_roadmap(self):
+        """Create implementation roadmap section"""
         story = []
-        header_style = self.safe_get_style('DetailedSectionHeader', 'Heading1')
-        story.append(Paragraph("Implementation Roadmap & Next Steps", header_style))
         
-        # Implementation phases with specific actions
-        roadmap_text = """
-        <b>Implementation Roadmap:</b><br/><br/>
-        • <b>Phase 1 - Planning:</b> Finalize migration strategy and resource allocation<br/>
-        • <b>Phase 2 - Preparation:</b> Set up AWS environment and migration tools<br/>
-        • <b>Phase 3 - Migration:</b> Execute data and application migration<br/>
-        • <b>Phase 4 - Testing:</b> Comprehensive validation and performance testing<br/>
-        • <b>Phase 5 - Go-Live:</b> Production cutover and monitoring<br/>
-        • <b>Phase 6 - Optimization:</b> Post-migration tuning and optimization
-        """
+        section_style = self.safe_get_style('SectionHeader', 'Heading1')
+        story.append(Paragraph("Implementation Roadmap & Next Steps", section_style))
+        story.append(Spacer(1, 15))
         
-        tech_style = self.safe_get_style('TechnicalSpec', 'Normal')
-        story.append(Paragraph(roadmap_text, tech_style))
+        subsection_style = self.safe_get_style('SubsectionHeader', 'Heading2')
+        story.append(Paragraph("Implementation Roadmap:", subsection_style))
+        
+        bullet_style = self.safe_get_style('BulletPoint', 'Normal')
+        roadmap_phases = [
+            "<b>Phase 1 - Planning:</b> Finalize migration strategy and resource allocation",
+            "<b>Phase 2 - Preparation:</b> Set up AWS environment and migration tools",
+            "<b>Phase 3 - Migration:</b> Execute data and application migration",
+            "<b>Phase 4 - Testing:</b> Comprehensive validation and performance testing",
+            "<b>Phase 5 - Go-Live:</b> Production cutover and monitoring",
+            "<b>Phase 6 - Optimization:</b> Post-migration tuning and optimization"
+        ]
+        
+        for phase in roadmap_phases:
+            story.append(Paragraph(f"• {phase}", bullet_style))
+            story.append(Spacer(1, 6))
+        
+        story.append(Spacer(1, 20))
         
         # Success criteria
-        success_criteria = """
-        <b>Success Criteria:</b><br/><br/>
-        • Zero data loss during migration<br/>
-        • Minimal downtime during cutover<br/>
-        • Performance meets or exceeds baseline<br/>
-        • Cost targets achieved within budget<br/>
-        • Team readiness and knowledge transfer complete
-        """
+        story.append(Paragraph("Success Criteria:", subsection_style))
         
-        metrics_style = self.safe_get_style('KeyMetrics', 'Normal')
-        story.append(Paragraph(success_criteria, metrics_style))
+        success_criteria = [
+            "Zero data loss during migration",
+            "Minimal downtime during cutover",
+            "Performance meets or exceeds baseline",
+            "Cost targets achieved within budget",
+            "Team readiness and knowledge transfer complete"
+        ]
+        
+        for criteria in success_criteria:
+            story.append(Paragraph(f"• {criteria}", bullet_style))
+            story.append(Spacer(1, 6))
         
         return story
 
 
-# Helper function to use the new generator
-# IMPROVED HELPER FUNCTION - Replace your existing helper function with this:
-
-def generate_comprehensive_pdf_report(analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
-    """Helper function with improved error handling"""
+# Helper function to use the improved generator
+def generate_improved_pdf_report(analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
+    """Helper function with improved formatting and error handling"""
     try:
-        print("Creating ComprehensiveReportGenerator...")
-        comprehensive_generator = ComprehensiveReportGenerator()
+        print("Creating ImprovedReportGenerator...")
+        improved_generator = ImprovedReportGenerator()
         
         print("Validating inputs...")
         if not analysis_results:
@@ -1089,8 +1266,8 @@ def generate_comprehensive_pdf_report(analysis_results, analysis_mode, server_sp
             print(f"Error: Invalid analysis mode '{analysis_mode}'")
             return None
         
-        print("Generating PDF...")
-        pdf_bytes = comprehensive_generator.generate_comprehensive_pdf_report(
+        print("Generating improved PDF...")
+        pdf_bytes = improved_generator.generate_improved_pdf_report(
             analysis_results=analysis_results,
             analysis_mode=analysis_mode,
             server_specs=server_specs,
@@ -1099,14 +1276,14 @@ def generate_comprehensive_pdf_report(analysis_results, analysis_mode, server_sp
         )
         
         if pdf_bytes:
-            print(f"PDF generated successfully. Size: {len(pdf_bytes)} bytes")
+            print(f"Improved PDF generated successfully. Size: {len(pdf_bytes)} bytes")
             return pdf_bytes
         else:
             print("Error: PDF generation returned None")
             return None
         
     except Exception as e:
-        print(f"Error in PDF generation: {str(e)}")
+        print(f"Error in improved PDF generation: {str(e)}")
         import traceback
         traceback.print_exc()
         return None
@@ -1128,7 +1305,7 @@ def generate_comprehensive_pdf_report_cached(analysis_results_str, analysis_mode
         transfer_results = json.loads(transfer_results_str) if transfer_results_str else None
         
         # Call the main function
-        return generate_comprehensive_pdf_report(
+        return generate_improved_pdf_report(
             analysis_results=analysis_results,
             analysis_mode=analysis_mode,
             server_specs=server_specs,
@@ -1170,7 +1347,7 @@ def example_usage_in_tab6():
                     transfer_results_for_pdf = st.session_state.transfer_results
                 
                 # Generate PDF using the improved helper function
-                pdf_bytes = generate_comprehensive_pdf_report(
+                pdf_bytes = generate_improved_pdf_report(
                     analysis_results=current_analysis_results,
                     analysis_mode=analysis_mode_for_pdf,
                     server_specs=current_server_specs_for_pdf,
@@ -1234,7 +1411,7 @@ def debug_pdf_generation(analysis_results, analysis_mode):
     print(f"Debug: Analysis results keys = {list(analysis_results.keys()) if isinstance(analysis_results, dict) else 'Not a dict'}")
     
     try:
-        generator = ComprehensiveReportGenerator()
+        generator = ImprovedReportGenerator()
         print("Debug: ComprehensiveReportGenerator created successfully")
         
         # Test if styles are set up correctly
@@ -3755,7 +3932,7 @@ with tab6:
                     st.info("🔄 Initializing Enhanced Report Generator...")
                     
                     # Create enhanced generator instance
-                    comprehensive_generator = ComprehensiveReportGenerator()
+                    comprehensive_generator = ImprovedReportGenerator()
                     
                     st.info("🔄 Preparing report data...")
                     
@@ -3775,7 +3952,7 @@ with tab6:
                     
                     # Generate PDF with comprehensive error handling
                     # Generate comprehensive PDF with charts and detailed analysis
-                    pdf_bytes = generate_comprehensive_pdf_report(
+                    pdf_bytes = generate_improved_pdf_report(
                     analysis_results=current_analysis_results,
                     analysis_mode=analysis_mode_for_pdf,
                     server_specs=current_server_specs_for_pdf,
