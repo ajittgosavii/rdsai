@@ -23,7 +23,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from comprehensive_pdf_generator import enhanced_report_generator, generate_ultra_comprehensive_pdf_report
+from comprehensive_pdf_generator import generate_ultra_comprehensive_pdf_report
 
 # Authentication imports
 import bcrypt
