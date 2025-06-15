@@ -16,7 +16,7 @@ from io import BytesIO
 import tempfile
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-from data_transfer_calculator import DataTransferCalculator, TransferMethod
+from data_transfer_calculator import DataTransferCalculator, TransferMethod, TransferMethodResult # Added TransferMethodResult
 import io
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
@@ -373,7 +373,7 @@ class StreamlitEnhancedReportGenerator:
                 "on_prem_cores": server['cpu_cores'],
                 "peak_cpu_percent": server['peak_cpu_percent'],
                 "on_prem_ram_gb": server['ram_gb'],
-                "peak_ram_percent": server['peak_ram_percent'],
+                "peak_ram_percent": server['peak_ram_percent'], # Corrected from ram_percent
                 "storage_current_gb": server['storage_gb'],
                 "storage_growth_rate": 0.2,
                 "years": 3,
@@ -1480,7 +1480,7 @@ class EnhancedReportGenerator:
                             "on_prem_cores": server['cpu_cores'],
                             "peak_cpu_percent": server['peak_cpu_percent'],
                             "on_prem_ram_gb": server['ram_gb'],
-                            "peak_ram_percent": server['ram_percent'],
+                            "peak_ram_percent": server['peak_ram_percent'], # Corrected from ram_percent
                             "storage_current_gb": server['storage_gb'],
                             "storage_growth_rate": 0.2,
                             "years": 3,
