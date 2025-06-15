@@ -322,108 +322,145 @@ from reportlab.graphics.charts.piecharts import Pie
 from reportlab.graphics.charts.linecharts import HorizontalLineChart
 from reportlab.lib.colors import HexColor
 
+# COMPLETE FIX: Replace the entire setup_custom_styles method
+# Find this method in your ComprehensiveReportGenerator class (around line 332) and replace it:
 class ComprehensiveReportGenerator:
-    """Enhanced PDF Report Generator with Charts, Graphs, and Detailed Analysis"""
+    """Enhanced PDF Report Generator with Charts and Detailed Analysis"""
     
     def __init__(self):
+        """Initialize the comprehensive report generator"""
         self.styles = getSampleStyleSheet()
+        self.chart_width = 6*inch
+        self.chart_height = 4*inch
         self.setup_custom_styles()
-        self.chart_width = 6 * inch
-        self.chart_height = 4 * inch
+
+def setup_custom_styles(self):
+    """Setup comprehensive custom styles for the report"""
+    # Enhanced Title style
+    self.styles.add(ParagraphStyle(
+        name='ComprehensiveTitle',
+        parent=self.styles['Title'],
+        fontSize=28,
+        spaceAfter=30,
+        textColor=colors.darkblue,
+        alignment=1,
+        fontName='Helvetica-Bold'
+    ))
     
-    def setup_custom_styles(self):
-        """Setup comprehensive custom styles for the report"""
-        # Enhanced Title style
-        self.styles.add(ParagraphStyle(
-            name='ComprehensiveTitle',
-            parent=self.styles['Title'],
-            fontSize=28,
-            spaceAfter=30,
-            textColor=colors.darkblue,
-            alignment=1,
-            fontName='Helvetica-Bold'
-        ))
-        
-        # Executive summary style
-        self.styles.add(ParagraphStyle(
-            name='ExecutiveHeader',
-            parent=self.styles['Heading1'],
-            fontSize=18,
-            spaceBefore=25,
-            spaceAfter=15,
-            textColor=colors.darkgreen,
-            borderWidth=3,
-            borderColor=colors.lightgreen,
-            borderPadding=8,
-            backColor=colors.lightcyan
-        ))
-        
-        # Section header style with background
-        self.styles.add(ParagraphStyle(
-            name='DetailedSectionHeader',
-            parent=self.styles['Heading1'],
-            fontSize=16,
-            spaceBefore=20,
-            spaceAfter=12,
-            textColor=colors.darkblue,
-            borderWidth=2,
-            borderColor=colors.lightblue,
-            borderPadding=8,
-            backColor=colors.aliceblue
-        ))
-        
-        # Technical specification style
-        self.styles.add(ParagraphStyle(
-            name='TechnicalSpec',
-            parent=self.styles['Normal'],
-            fontSize=11,
-            spaceBefore=8,
-            spaceAfter=6,
-            textColor=colors.darkslategrey,
-            fontName='Helvetica',
-            leftIndent=20,
-            backColor=colors.whitesmoke,
-            borderWidth=1,
-            borderColor=colors.lightgrey,
-            borderPadding=5
-        ))
-        
-        # Key metrics style
-        self.styles.add(ParagraphStyle(
-            name='KeyMetrics',
-            parent=self.styles['Normal'],
-            fontSize=14,
-            textColor=colors.darkred,
-            backColor=colors.lightyellow,
-            borderWidth=2,
-            borderColor=colors.orange,
-            borderPadding=10,
-            alignment=1
-        ))
-        
-        # Cost analysis style
-        self.styles.add(ParagraphStyle(
-            name='CostAnalysis',
-            parent=self.styles['Normal'],
-            fontSize=12,
-            textColor=colors.darkgreen,
-            backColor=colors.lightgreen,
-            borderWidth=1,
-            borderColor=colors.green,
-            borderPadding=6
-        ))
-        
-        # Warning/Risk style
-        self.styles.add(ParagraphStyle(
-            name='RiskWarning',
-            parent=self.styles['Normal'],
-            fontSize=12,
-            textColor=colors.darkred,
-            backColor=colors.mistyrose,
-            borderWidth=2,
-            borderColor=colors.red,
-            borderPadding=8
-        ))
+    # Executive summary style
+    self.styles.add(ParagraphStyle(
+        name='ExecutiveHeader',
+        parent=self.styles['Heading1'],
+        fontSize=18,
+        spaceBefore=25,
+        spaceAfter=15,
+        textColor=colors.darkgreen,
+        borderWidth=3,
+        borderColor=colors.lightgreen,
+        borderPadding=8,
+        backColor=colors.lightcyan
+    ))
+    
+    # Section header style with background
+    self.styles.add(ParagraphStyle(
+        name='DetailedSectionHeader',
+        parent=self.styles['Heading1'],
+        fontSize=16,
+        spaceBefore=20,
+        spaceAfter=12,
+        textColor=colors.darkblue,
+        borderWidth=2,
+        borderColor=colors.lightblue,
+        borderPadding=8,
+        backColor=colors.aliceblue
+    ))
+    
+    # ADD MISSING SubsectionHeader style
+    self.styles.add(ParagraphStyle(
+        name='SubsectionHeader',
+        parent=self.styles['Heading2'],
+        fontSize=14,
+        spaceBefore=15,
+        spaceAfter=10,
+        textColor=colors.darkblue,
+        fontName='Helvetica-Bold'
+    ))
+    
+    # Technical specification style - FIXED COLORS
+    self.styles.add(ParagraphStyle(
+        name='TechnicalSpec',
+        parent=self.styles['Normal'],
+        fontSize=11,
+        spaceBefore=8,
+        spaceAfter=6,
+        textColor=colors.darkslategrey,  # FIXED: British spelling
+        fontName='Helvetica',
+        leftIndent=20,
+        backColor=colors.whitesmoke,
+        borderWidth=1,
+        borderColor=colors.lightgrey,    # FIXED: British spelling
+        borderPadding=5
+    ))
+    
+    # Key metrics style
+    self.styles.add(ParagraphStyle(
+        name='KeyMetrics',
+        parent=self.styles['Normal'],
+        fontSize=14,
+        textColor=colors.darkred,
+        backColor=colors.lightyellow,
+        borderWidth=2,
+        borderColor=colors.orange,
+        borderPadding=10,
+        alignment=1
+    ))
+    
+    # Cost analysis style
+    self.styles.add(ParagraphStyle(
+        name='CostAnalysis',
+        parent=self.styles['Normal'],
+        fontSize=12,
+        textColor=colors.darkgreen,
+        backColor=colors.lightgreen,
+        borderWidth=1,
+        borderColor=colors.green,
+        borderPadding=6
+    ))
+    
+    # Warning/Risk style
+    self.styles.add(ParagraphStyle(
+        name='RiskWarning',
+        parent=self.styles['Normal'],
+        fontSize=12,
+        textColor=colors.darkred,
+        backColor=colors.mistyrose,
+        borderWidth=2,
+        borderColor=colors.red,
+        borderPadding=8
+    ))
+
+# ALTERNATIVE QUICK FIX: Replace the problematic line in _create_single_server_technical_details method
+# Find this line (around line 1067):
+# story.append(Paragraph(f"{env} Environment Configuration", self.styles['SubsectionHeader']))
+
+# REPLACE WITH:
+# story.append(Paragraph(f"<b>{env} Environment Configuration</b>", self.styles['Heading2']))
+
+# OR even simpler, replace with:
+# story.append(Paragraph(f"<b>{env} Environment Configuration</b>", self.styles['Normal']))
+
+# DEBUGGING: Add this method to check what styles are available
+def debug_styles(self):
+    """Debug method to see all available styles"""
+    print("Available styles:")
+    for name in self.styles.byName.keys():
+        print(f"  - {name}")
+    print("Available aliases:")
+    for alias in self.styles.byAlias.keys():
+        print(f"  - {alias}")
+
+# You can call this in __init__ after setup_custom_styles() to see what's available:
+# self.debug_styles()  # Add this line temporarily for debugging
     
     def create_plotly_chart_image(self, fig, width=800, height=600):
         """Convert Plotly figure to image for PDF inclusion"""
@@ -1064,7 +1101,7 @@ class ComprehensiveReportGenerator:
             return story
         
         for env, result in valid_results.items():
-            story.append(Paragraph(f"{env} Environment Configuration", self.styles['SubsectionHeader']))
+            story.append(Paragraph(f"<b>{env} Environment Configuration</b>", self.styles['Heading2']))
             
             # Create detailed technical table
             tech_data = [['Component', 'Current (On-Prem)', 'Recommended (AWS)', 'Improvement Factor']]
@@ -1559,11 +1596,37 @@ class ComprehensiveReportGenerator:
 
 
 # Helper function to use the new generator
+# IMPROVED HELPER FUNCTION - Replace your existing helper function with this:
+
 def generate_comprehensive_pdf_report(analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
-    """Helper function to generate comprehensive PDF report"""
+    """
+    Helper function to generate comprehensive PDF report with enhanced error handling
+    
+    Args:
+        analysis_results: Dictionary containing analysis results
+        analysis_mode: String 'single' or 'bulk'
+        server_specs: Server specifications (dict for single, list for bulk)
+        ai_insights: AI insights dictionary (optional)
+        transfer_results: Transfer analysis results (optional)
+    
+    Returns:
+        bytes: PDF file as bytes, or None if generation failed
+    """
     try:
+        # Initialize the comprehensive report generator
         comprehensive_generator = ComprehensiveReportGenerator()
         
+        # Validate inputs
+        if not analysis_results:
+            print("Error: No analysis results provided")
+            return None
+        
+        if analysis_mode not in ['single', 'bulk']:
+            print(f"Error: Invalid analysis mode '{analysis_mode}'. Must be 'single' or 'bulk'")
+            return None
+        
+        # Generate the PDF
+        print("Generating comprehensive PDF report...")
         pdf_bytes = comprehensive_generator.generate_comprehensive_pdf_report(
             analysis_results=analysis_results,
             analysis_mode=analysis_mode,
@@ -1572,13 +1635,188 @@ def generate_comprehensive_pdf_report(analysis_results, analysis_mode, server_sp
             transfer_results=transfer_results
         )
         
-        return pdf_bytes
+        if pdf_bytes:
+            print(f"PDF generated successfully. Size: {len(pdf_bytes)} bytes")
+            return pdf_bytes
+        else:
+            print("Error: PDF generation returned None")
+            return None
+        
+    except ImportError as e:
+        print(f"Missing required libraries for PDF generation: {e}")
+        print("Please install: pip install reportlab kaleido plotly>=5.0.0")
+        return None
+    
+    except AttributeError as e:
+        if "'SubsectionHeader'" in str(e):
+            print("Error: Missing SubsectionHeader style. Please add it to setup_custom_styles()")
+            print("Add this to setup_custom_styles():")
+            print("""
+self.styles.add(ParagraphStyle(
+    name='SubsectionHeader',
+    parent=self.styles['Heading2'],
+    fontSize=14,
+    spaceBefore=15,
+    spaceAfter=10,
+    textColor=colors.darkblue,
+    fontName='Helvetica-Bold'
+))""")
+        else:
+            print(f"Attribute error in PDF generation: {e}")
+        return None
+    
+    except Exception as e:
+        print(f"Unexpected error generating PDF report: {str(e)}")
+        import traceback
+        print("Full traceback:")
+        print(traceback.format_exc())
+        return None
+
+# ALTERNATIVE: Cached version for better performance
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def generate_comprehensive_pdf_report_cached(analysis_results_str, analysis_mode, server_specs_str=None, ai_insights_str=None, transfer_results_str=None):
+    """
+    Cached version of PDF generator (converts strings back to objects)
+    Use this if you're generating the same report multiple times
+    """
+    import json
+    
+    try:
+        # Convert string parameters back to objects
+        analysis_results = json.loads(analysis_results_str) if analysis_results_str else None
+        server_specs = json.loads(server_specs_str) if server_specs_str else None
+        ai_insights = json.loads(ai_insights_str) if ai_insights_str else None
+        transfer_results = json.loads(transfer_results_str) if transfer_results_str else None
+        
+        # Call the main function
+        return generate_comprehensive_pdf_report(
+            analysis_results=analysis_results,
+            analysis_mode=analysis_mode,
+            server_specs=server_specs,
+            ai_insights=ai_insights,
+            transfer_results=transfer_results
+        )
+    
+    except json.JSONDecodeError as e:
+        print(f"Error parsing cached parameters: {e}")
+        return None
+
+# USAGE EXAMPLE in your TAB 6:
+def example_usage_in_tab6():
+    """Example of how to use the improved helper function"""
+    
+    # Your existing code in TAB 6, replace the PDF generation section with:
+    if st.button("📄 Generate Enhanced PDF Report", type="primary", use_container_width=True):
+        with st.spinner("Generating Enhanced PDF Report..."):
+            try:
+                # Prepare inputs with validation
+                if not current_analysis_results:
+                    st.error("❌ No analysis results available")
+                    return
+                
+                if analysis_mode_for_pdf not in ['single', 'bulk']:
+                    st.error(f"❌ Invalid analysis mode: {analysis_mode_for_pdf}")
+                    return
+                
+                # Prepare AI insights (ensure it's not None)
+                ai_insights_for_pdf = st.session_state.ai_insights if st.session_state.ai_insights else {
+                    "risk_level": "Unknown",
+                    "cost_optimization_potential": 0,
+                    "ai_analysis": "AI insights were not available during analysis generation."
+                }
+                
+                # Prepare transfer results
+                transfer_results_for_pdf = None
+                if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
+                    transfer_results_for_pdf = st.session_state.transfer_results
+                
+                # Generate PDF using the improved helper function
+                pdf_bytes = generate_comprehensive_pdf_report(
+                    analysis_results=current_analysis_results,
+                    analysis_mode=analysis_mode_for_pdf,
+                    server_specs=current_server_specs_for_pdf,
+                    ai_insights=ai_insights_for_pdf,
+                    transfer_results=transfer_results_for_pdf
+                )
+                
+                if pdf_bytes:
+                    st.success("✅ Enhanced PDF Report generated successfully!")
+                    
+                    # Calculate file size
+                    file_size_mb = len(pdf_bytes) / (1024 * 1024)
+                    st.info(f"📄 PDF Size: {file_size_mb:.2f} MB")
+                    
+                    # Generate filename with timestamp
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    filename = f"aws_rds_migration_enhanced_{analysis_mode_for_pdf}_{timestamp}.pdf"
+                    
+                    st.download_button(
+                        label="📥 Download Enhanced PDF Report",
+                        data=pdf_bytes,
+                        file_name=filename,
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                else:
+                    st.error("❌ Failed to generate PDF. Check the error messages above.")
+                    
+                    # Offer alternative export
+                    st.subheader("🔄 Alternative Export Options")
+                    if st.button("📊 Export Analysis as JSON (Fallback)", use_container_width=True):
+                        export_data = {
+                            'analysis_mode': analysis_mode_for_pdf,
+                            'analysis_results': current_analysis_results,
+                            'server_specs': current_server_specs_for_pdf,
+                            'ai_insights': ai_insights_for_pdf,
+                            'transfer_results': transfer_results_for_pdf,
+                            'generated_at': datetime.now().isoformat()
+                        }
+                        
+                        json_data = json.dumps(export_data, indent=2, default=str)
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        
+                        st.download_button(
+                            label="📥 Download JSON Report",
+                            data=json_data,
+                            file_name=f"analysis_report_{timestamp}.json",
+                            mime="application/json",
+                            use_container_width=True
+                        )
+            
+            except Exception as e:
+                st.error(f"❌ Error in PDF generation process: {str(e)}")
+                st.code(traceback.format_exc())
+
+# DEBUG HELPER: Add this temporarily to see what's happening
+def debug_pdf_generation(analysis_results, analysis_mode):
+    """Debug helper to test PDF generation step by step"""
+    print(f"Debug: Analysis mode = {analysis_mode}")
+    print(f"Debug: Analysis results type = {type(analysis_results)}")
+    print(f"Debug: Analysis results keys = {list(analysis_results.keys()) if isinstance(analysis_results, dict) else 'Not a dict'}")
+    
+    try:
+        generator = ComprehensiveReportGenerator()
+        print("Debug: ComprehensiveReportGenerator created successfully")
+        
+        # Test if styles are set up correctly
+        required_styles = ['ComprehensiveTitle', 'ExecutiveHeader', 'DetailedSectionHeader', 'SubsectionHeader', 'TechnicalSpec']
+        missing_styles = []
+        for style_name in required_styles:
+            try:
+                _ = generator.styles[style_name]
+            except KeyError:
+                missing_styles.append(style_name)
+        
+        if missing_styles:
+            print(f"Debug: Missing styles: {missing_styles}")
+        else:
+            print("Debug: All required styles are available")
+            
+        return True
         
     except Exception as e:
-        print(f"Error generating comprehensive PDF report: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return None
+        print(f"Debug: Error creating generator: {e}")
+        return False
 
 # ================================
 # VISUALIZATION FUNCTIONS
