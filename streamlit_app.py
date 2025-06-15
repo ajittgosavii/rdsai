@@ -25,7 +25,6 @@ from reportlab.lib import colors
 from reportlab.lib.units import inch
 
 
-
 # Add to imports section
 try:
     from enhanced_report_generator import EnhancedReportGenerator, StreamlitReportIntegration
@@ -40,7 +39,10 @@ import jwt
 try:
     from rds_sizing import EnhancedRDSSizingCalculator, MigrationType, WorkloadCharacteristics
     from aws_pricing import EnhancedAWSPricingAPI
-    from report_generator import EnhancedReportGenerator
+    # Ensure this EnhancedReportGenerator is the one defined later in this file
+    # If you have a separate file named report_generator.py, make sure its EnhancedReportGenerator
+    # is compatible or delete this specific import if it's causing conflict.
+    from report_generator import EnhancedReportGenerator 
 except ImportError as e:
     st.error(f"Import error: {e}")
     st.stop()
@@ -161,7 +163,6 @@ def show_login_form():
                         st.session_state.user_data = user_data
                         st.session_state.session_token = token
                         st.session_state.user_id = user_data['username']
-                        st.session_state.user_email = user_data['email']
                         st.session_state.is_logged_in = True
                         
                         st.success(f"✅ Welcome, {user_data['name']}!")
@@ -209,7 +210,6 @@ def check_authentication():
             st.session_state.user_authenticated = True
             st.session_state.user_data = token_data
             st.session_state.user_id = token_data['username']
-            st.session_state.user_email = token_data['email']
             st.session_state.is_logged_in = True
         else:
             if 'session_token' in st.session_state:
@@ -302,8 +302,6 @@ def safe_get_str(dictionary, key, default="N/A"):
     if isinstance(dictionary, dict):
         return dictionary.get(key, default)
     return default
-# In streamlit_app.py, add this class after the utility functions section (around line 500-600)
-# Add after the existing utility functions and before the main app initialization
 
 class StreamlitEnhancedReportGenerator:
     """Enhanced report generator integrated with Streamlit app"""
@@ -996,6 +994,8 @@ class EnhancedReportGenerator:
             return buffer.getvalue()
         except Exception as e:
             st.error(f"Error building PDF: {e}")
+            import traceback # Add traceback for detailed error
+            print(traceback.format_exc())
             return None
 
     def _create_title_page(self, analysis_mode):
@@ -1514,7 +1514,9 @@ class EnhancedReportGenerator:
 def generate_enhanced_pdf_report(analysis_results, analysis_mode, server_specs=None, ai_insights=None, transfer_results=None):
     """Helper function to generate enhanced PDF report in Streamlit"""
     try:
-        enhanced_generator = EnhancedReportGenerator()
+        # Instantiate EnhancedReportGenerator directly within this function scope
+        # This prevents potential issues with it being cached or reused incorrectly across runs
+        enhanced_generator = EnhancedReportGenerator() 
         
         pdf_bytes = enhanced_generator.generate_comprehensive_pdf_report(
             analysis_results=analysis_results,
@@ -1572,6 +1574,8 @@ if 'transfer_results' not in st.session_state:
     st.session_state.transfer_results = None
 if 'transfer_data_size' not in st.session_state:
     st.session_state.transfer_data_size = 0
+if 'user_email' not in st.session_state: # Ensure this is initialized
+    st.session_state.user_email = ""
 
 
 # Initialize Firebase
@@ -1584,14 +1588,16 @@ def initialize_components():
     """Initialize the pricing API and report generator"""
     try:
         pricing_api = EnhancedAWSPricingAPI()
-        report_generator = EnhancedReportGenerator()
-        return pricing_api, report_generator
+        # Ensure EnhancedReportGenerator is instantiated here if it's needed globally
+        # or remove if only generate_enhanced_pdf_report instantiates it
+        # report_generator = EnhancedReportGenerator() 
+        return pricing_api #, report_generator
     except Exception as e:
         st.error(f"Error initializing static components: {e}")
-        return None, None
+        return None #, None
 
-pricing_api, report_generator = initialize_components()
-if not pricing_api or not report_generator:
+pricing_api = initialize_components() # Only receive pricing_api now
+if not pricing_api: # or not report_generator:
     st.error("Failed to initialize required components")
     st.stop()
     
@@ -1655,39 +1661,77 @@ st.markdown("---")
 # Main navigation
 
 # Inject mock data for testing PDF generation (remove in production)
+# This mock data is ONLY injected if bulk_results is empty.
+# If you upload a file, this section will be skipped.
 if 'bulk_results' not in st.session_state or not st.session_state.bulk_results:
-    st.session_state.bulk_results = {
-        'server1': {
-            'PROD': {
-                'total_cost': 1500,
-                'instance_type': 'db.m5.large',
-                'actual_vCPUs': 2,
-                'actual_RAM_GB': 8,
-                'storage_GB': 100,
-                'cost_breakdown': {
-                    'instance_monthly': 1200,
-                    'storage_monthly': 200,
-                    'backup_monthly': 100
-                },
-                'writer': {
+    if 'server1' not in st.session_state.bulk_results: # Prevent re-injection on rerun if already set
+        st.session_state.bulk_results = {
+            'server1': {
+                'PROD': {
+                    'total_cost': 1500,
                     'instance_type': 'db.m5.large',
                     'actual_vCPUs': 2,
-                    'actual_RAM_GB': 8
+                    'actual_RAM_GB': 8,
+                    'storage_GB': 100,
+                    'cost_breakdown': {
+                        'instance_monthly': 1200,
+                        'storage_monthly': 200,
+                        'backup_monthly': 100
+                    },
+                    'writer': {
+                        'instance_type': 'db.m5.large',
+                        'actual_vCPUs': 2,
+                        'actual_RAM_GB': 8
+                    }
                 }
             }
         }
-    }
-    st.session_state.on_prem_servers = [{
-        'server_name': 'server1',
-        'cpu_cores': 2,
-        'ram_gb': 8,
-        'storage_gb': 100,
-        'peak_cpu_percent': 75,
-        'peak_ram_percent': 80,
-        'max_iops': 1000,
-        'max_throughput_mbps': 125,
-        'database_engine': 'oracle-ee'
-    }]
+        st.session_state.on_prem_servers = [{
+            'server_name': 'server1',
+            'cpu_cores': 2,
+            'ram_gb': 8,
+            'storage_gb': 100,
+            'peak_cpu_percent': 75,
+            'peak_ram_percent': 80,
+            'max_iops': 1000,
+            'max_throughput_mbps': 125,
+            'database_engine': 'oracle-ee'
+        }]
+    # Also inject a dummy AI insight for mock data if none exists
+    if not st.session_state.ai_insights:
+        st.session_state.ai_insights = {
+            "risk_level": "Medium",
+            "cost_optimization_potential": 0.15,
+            "recommended_writers": 1,
+            "recommended_readers": 1,
+            "ai_analysis": "This is a mock AI analysis for the single server. It suggests optimizing storage and considering a multi-AZ deployment for high availability. The database workload seems balanced with a slight read bias. Further analysis with historical performance data would refine recommendations."
+        }
+    
+    # Also inject a dummy transfer result for mock data if none exists
+    if not st.session_state.transfer_results:
+        from data_transfer_calculator import TransferMethodResult # Ensure this is accessible if not already
+        st.session_state.transfer_results = {
+            'datasync_dx': TransferMethodResult(
+                recommended_method='AWS DataSync (Direct Connect)',
+                transfer_time_hours=10.5,
+                transfer_time_days=0.4,
+                total_cost=50.0,
+                bandwidth_utilization=90.0,
+                estimated_downtime_hours=0.1,
+                cost_breakdown={'data_transfer': 25.0, 'datasync_task': 25.0}
+            ),
+            'datasync_internet': TransferMethodResult(
+                recommended_method='AWS DataSync (Internet)',
+                transfer_time_hours=24.0,
+                transfer_time_days=1.0,
+                total_cost=30.0,
+                bandwidth_utilization=70.0,
+                estimated_downtime_hours=0.5,
+                cost_breakdown={'data_transfer': 10.0, 'datasync_task': 20.0}
+            )
+        }
+        st.session_state.transfer_data_size = 500 # GB
+
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🎯 Migration Planning", "🖥️ Server Specifications", "📊 Sizing Analysis", "💰 Financial Analysis", "🤖 AI Insights", "📋 Reports"])
 
@@ -1771,12 +1815,26 @@ with tab1:
     if st.button("🎯 Configure Migration", type="primary", use_container_width=True):
         with st.spinner("Configuring migration parameters..."):
             try:
-                if st.session_state.user_claude_api_key_input and st.session_state.calculator.ai_client is None:
+                # Re-initialize calculator with updated API key if provided
+                claude_api_key_current = None
+                if st.session_state.user_claude_api_key_input:
+                    claude_api_key_current = st.session_state.user_claude_api_key_input
+                elif "anthropic" in st.secrets and "ANTHROPIC_API_KEY" in st.secrets["anthropic"]:
+                    claude_api_key_current = st.secrets["anthropic"]["ANTHROPIC_API_KEY"]
+                else:
+                    claude_api_key_current = os.environ.get('ANTHROPIC_API_KEY')
+
+                # Only re-initialize if the key has changed or calculator is None
+                if st.session_state.calculator is None or \
+                   (hasattr(st.session_state.calculator, 'anthropic_api_key') and \
+                    st.session_state.calculator.anthropic_api_key != claude_api_key_current) or \
+                   (not hasattr(st.session_state.calculator, 'anthropic_api_key') and claude_api_key_current):
                     st.session_state.calculator = EnhancedRDSSizingCalculator(
-                        anthropic_api_key=st.session_state.user_claude_api_key_input,
+                        anthropic_api_key=claude_api_key_current,
                         use_real_time_pricing=True
                     )
-                
+
+
                 workload_chars = WorkloadCharacteristics(
                     cpu_utilization_pattern=cpu_pattern,
                     memory_usage_pattern=memory_pattern,
@@ -2206,7 +2264,7 @@ with tab3:
                                         ai_insights = asyncio.run(calculator.generate_ai_insights(results, inputs))
                                         st.session_state.ai_insights = ai_insights
                                     except Exception as e:
-                                        st.warning(f"AI insights generation failed: {e}")
+                                        st.warning(f"AI insights generation failed for single server: {e}")
                                         st.session_state.ai_insights = None
                             
                             st.success(f"✅ Analysis complete in {st.session_state.generation_time:.1f} seconds!")
@@ -2247,6 +2305,9 @@ with tab3:
                 bulk_results = {}
                 total_servers = len(servers)
                 
+                # Initialize total_monthly_cost for AI insights calculation
+                total_monthly_cost_for_ai_insights = 0 
+
                 try:
                     for i, server in enumerate(servers):
                         status_placeholder.text(f"Analyzing {server['server_name']} ({i+1}/{total_servers})")
@@ -2276,6 +2337,12 @@ with tab3:
                             server_results = calculator.generate_comprehensive_recommendations(inputs)
                             bulk_results[server['server_name']] = server_results
                             
+                            # Accumulate cost for AI insights, only from successful analyses
+                            if 'error' not in server_results:
+                                prod_result = server_results.get('PROD', list(server_results.values())[0])
+                                if 'error' not in prod_result:
+                                    total_monthly_cost_for_ai_insights += safe_get(prod_result, 'total_cost', 0)
+
                         except Exception as e:
                             bulk_results[server['server_name']] = {'error': str(e)}
                             st.warning(f"⚠️ Error analyzing {server['server_name']}: {e}")
@@ -2293,19 +2360,19 @@ with tab3:
                     
                     progress_bar.progress(1.0)
                     status_placeholder.success(f"✅ Bulk analysis complete! {successful_analyses} successful, {failed_analyses} failed")
-                    #if successful_analyses > 0: # Only attempt AI insights if there are successful analyses
-                    if calculator.ai_client:
+                    
+                    # --- AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
+                    if successful_analyses > 0 and calculator.ai_client: # Only attempt AI insights if there are successful analyses and AI client is ready
                         with st.spinner("🤖 Generating AI insights for bulk analysis..."):
                             try:
-                            # Aggregate all successful results for AI analysis
+                                # Aggregate all successful results for AI analysis
                                 aggregated_results_for_ai = {}
                                 for server_name, server_data in bulk_results.items():
                                     if 'error' not in server_data:
-                                    # Assuming 'PROD' is the key for the main result
+                                        # Assuming 'PROD' is the key for the main result
                                         aggregated_results_for_ai[server_name] = server_data.get('PROD', list(server_data.values())[0])
 
-                            # Create a dummy input for the overall bulk AI insight, or refine as needed
-                            # This input can be enhanced with more aggregate metrics if your AI expects it
+                                # Create input for the overall bulk AI insight
                                 bulk_inputs_for_ai = {
                                     "region": st.session_state.region,
                                     "target_engine": st.session_state.target_engine,
@@ -2313,8 +2380,11 @@ with tab3:
                                     "deployment": st.session_state.deployment_option,
                                     "storage_type": st.session_state.storage_type,
                                     "num_servers_analyzed": successful_analyses,
-                                    "total_monthly_cost": total_monthly_cost,
-                                    # Add more aggregated metrics here (e.g., total vCPUs, total RAM)
+                                    "total_monthly_cost": total_monthly_cost_for_ai_insights, # Correctly using calculated total_monthly_cost
+                                    "avg_cpu_cores": sum([safe_get(s.get('PROD', {}).get('writer', {}), 'actual_vCPUs', safe_get(s.get('PROD', {}), 'actual_vCPUs', 0)) for s in bulk_results.values() if 'error' not in s]) / successful_analyses if successful_analyses > 0 else 0,
+                                    "avg_ram_gb": sum([safe_get(s.get('PROD', {}).get('writer', {}), 'actual_RAM_GB', safe_get(s.get('PROD', {}), 'actual_RAM_GB', 0)) for s in bulk_results.values() if 'error' not in s]) / successful_analyses if successful_analyses > 0 else 0,
+                                    "avg_storage_gb": sum([safe_get(s.get('PROD', {}), 'storage_GB', 0) for s in bulk_results.values() if 'error' not in s]) / successful_analyses if successful_analyses > 0 else 0,
+                                    # You can add more aggregated metrics here
                                 }
 
                                 bulk_ai_insights = asyncio.run(calculator.generate_ai_insights(aggregated_results_for_ai, bulk_inputs_for_ai))
@@ -2322,31 +2392,32 @@ with tab3:
                                 st.success("✅ AI insights for bulk analysis generated!")
                             except Exception as e:
                                 st.warning(f"AI insights generation for bulk failed: {e}")
+                                st.code(traceback.format_exc()) # Log the full traceback
                                 st.session_state.ai_insights = None
-            # --- END NEW CODE INSERTION HERE ---
+                    elif successful_analyses == 0:
+                        st.info("No successful server analyses found; skipping AI insights generation for bulk.")
+                        st.session_state.ai_insights = None
+                    else:
+                        st.info("Anthropic API key not provided or AI client not ready; skipping AI insights generation.")
+                        st.session_state.ai_insights = None # Ensure it's explicitly None if skipped
+                    # --- END AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
 
                     if successful_analyses > 0:
-                        st.subheader("📊 Bulk Analysis Results") # This is the line *after* the insertion
-
-                        summary_fig = create_bulk_analysis_summary_chart(bulk_results)
-                    
-                    
-                    if successful_analyses > 0:
-                        st.subheader("📊 Bulk Analysis Results")
+                        st.subheader("📊 Bulk Analysis Results") 
                         
                         summary_fig = create_bulk_analysis_summary_chart(bulk_results)
                         if summary_fig:
                             st.plotly_chart(summary_fig, use_container_width=True)
                         
                         summary_data = []
-                        total_monthly_cost = 0
+                        total_monthly_cost_display = 0 # Use a separate variable for display sum
                         
                         for server_name, results in bulk_results.items():
                             if 'error' not in results:
                                 result = results.get('PROD', list(results.values())[0])
                                 if 'error' not in result:
                                     monthly_cost = safe_get(result, 'total_cost', 0)
-                                    total_monthly_cost += monthly_cost
+                                    total_monthly_cost_display += monthly_cost
                                     
                                     recommended_instance_type = ""
                                     vcpus_display = 0
@@ -2388,235 +2459,25 @@ with tab3:
                         
                         col1, col2, col3 = st.columns(3)
                         with col1:
-                            st.metric("Total Monthly Cost", f"${total_monthly_cost:,.2f}")
+                            st.metric("Total Monthly Cost", f"${total_monthly_cost_display:,.2f}")
                         with col2:
-                            st.metric("Total Annual Cost", f"${total_monthly_cost * 12:,.2f}")
+                            st.metric("Total Annual Cost", f"${total_monthly_cost_display * 12:,.2f}")
                         with col3:
-                            avg_cost = total_monthly_cost / successful_analyses if successful_analyses > 0 else 0
+                            avg_cost = total_monthly_cost_display / successful_analyses if successful_analyses > 0 else 0
                             st.metric("Average Cost per Server", f"${avg_cost:,.2f}")
                     
                 except Exception as e:
                     st.error(f"❌ Bulk analysis failed: {str(e)}")
                     st.code(traceback.format_exc())
         
-        # Display results for both single and bulk
+        # Display results for both single and bulk (moved outside the button click for persistent display)
+        # This section should ideally be refactored to only display if results exist,
+        # irrespective of whether the button was just clicked.
+        # This is here for compatibility with existing structure.
         if st.session_state.results or st.session_state.bulk_results:
             current_results = st.session_state.results if st.session_state.current_analysis_mode == 'single' else st.session_state.bulk_results
             
-            st.subheader("📊 Export Options")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                if st.button("📊 Export to CSV", use_container_width=True):
-                    if st.session_state.current_analysis_mode == 'single':
-                        valid_results = {k: v for k, v in current_results.items() if 'error' not in v}
-                        
-                        df_data = []
-                        for env, result in valid_results.items():
-                            instance_type_display = safe_get_str(result, 'instance_type', 'N/A')
-                            vcpus_display = safe_get(result, 'actual_vCPUs', 0)
-                            ram_gb_display = safe_get(result, 'actual_RAM_GB', 0)
-                            instance_cost_display = safe_get(result, 'instance_cost', 0)
-                            
-                            if 'writer' in result:
-                                writer_info = result['writer']
-                                instance_type_display = safe_get_str(writer_info, 'instance_type', 'N/A')
-                                vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
-                                ram_gb_display = safe_get(writer_info, 'actual_RAM_GB', 0)
-                                instance_cost_display = safe_get(writer_info, 'instance_cost', 0)
-                                if result['readers']:
-                                    for reader_info in result['readers']:
-                                        instance_cost_display += safe_get(reader_info, 'instance_cost', 0)
-                                    instance_type_display += f" + {len(result['readers'])} Readers ({safe_get_str(result['readers'][0], 'instance_type', 'N/A')})"
-
-                            df_data.append({
-                                'Environment': env,
-                                'Instance Type': instance_type_display,
-                                'vCPUs': vcpus_display,
-                                'RAM (GB)': ram_gb_display,
-                                'Storage (GB)': safe_get(result, 'storage_GB', 0),
-                                'Instance Cost': instance_cost_display,
-                                'Storage Cost': safe_get(result, 'storage_cost', 0),
-                                'Total Monthly Cost': safe_get(result, 'total_cost', 0)
-                            })
-                        
-                        df = pd.DataFrame(df_data)
-                        csv = df.to_csv(index=False)
-                        filename = f"rds_single_recommendations_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-                    else:
-                        df_data = []
-                        for server_name, server_results in current_results.items():
-                            if 'error' not in server_results:
-                                result = server_results.get('PROD', list(server_results.values())[0])
-                                if 'error' not in result:
-                                    instance_type_display = ""
-                                    vcpus_display = 0
-                                    ram_gb_display = 0
-                                    instance_cost_display = 0
-
-                                    if 'writer' in result:
-                                        writer_info = result['writer']
-                                        instance_type_display = safe_get_str(writer_info, 'instance_type', 'N/A')
-                                        vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
-                                        ram_gb_display = safe_get(writer_info, 'actual_RAM_GB', 0)
-                                        instance_cost_display = safe_get(writer_info, 'instance_cost', 0)
-                                        if result['readers']:
-                                            for reader_info in result['readers']:
-                                                instance_cost_display += safe_get(reader_info, 'instance_cost', 0)
-                                            instance_type_display += f" + {len(result['readers'])} Readers"
-                                    else:
-                                        instance_type_display = safe_get_str(result, 'instance_type', 'N/A')
-                                        vcpus_display = safe_get(result, 'actual_vCPUs', 0)
-                                        ram_gb_display = safe_get(result, 'actual_RAM_GB', 0)
-                                        instance_cost_display = safe_get(result, 'instance_cost', 0)
-                                    
-                                    monthly_cost = safe_get(result, 'total_cost', 0)
-
-                                    df_data.append({
-                                        'Server Name': server_name,
-                                        'Recommended Instance': instance_type_display,
-                                        'vCPUs': vcpus_display,
-                                        'RAM (GB)': ram_gb_display,
-                                        'Storage (GB)': safe_get(result, 'storage_GB', 0),
-                                        'Instance Cost': instance_cost_display,
-                                        'Storage Cost': safe_get(result, 'storage_cost', 0),
-                                        'Total Monthly Cost': monthly_cost,
-                                        'Annual Cost': monthly_cost * 12
-                                    })
-                        
-                        df = pd.DataFrame(df_data)
-                        csv = df.to_csv(index=False)
-                        filename = f"rds_bulk_recommendations_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-                    
-                    st.download_button(
-                        label="📥 Download CSV",
-                        data=csv,
-                        file_name=filename,
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-            
-            with col2:
-                if st.button("📋 Export to JSON", use_container_width=True):
-                    export_data = {
-                        'analysis_mode': st.session_state.current_analysis_mode,
-                        'migration_config': {
-                            'source_engine': st.session_state.source_engine,
-                            'target_engine': st.session_state.target_engine,
-                            'migration_type': calculator.migration_profile.migration_type.value if calculator.migration_profile else 'unknown'
-                        },
-                        'recommendations': current_results,
-                        'ai_insights': st.session_state.ai_insights,
-                        'generation_time': st.session_state.get('generation_time', 0),
-                        'generated_at': datetime.now().isoformat()
-                    }
-                    
-                    if st.session_state.current_analysis_mode == 'single' and 'current_server_spec' in st.session_state:
-                        export_data['server_specification'] = st.session_state.current_server_spec
-                    elif st.session_state.current_analysis_mode == 'bulk':
-                        export_data['bulk_servers'] = st.session_state.on_prem_servers
-                    
-                    json_str = json.dumps(export_data, indent=2, default=str)
-                    
-                    report_type = "bulk" if st.session_state.current_analysis_mode == 'bulk' else "single"
-                    st.download_button(
-                        label="📥 Download JSON",
-                        data=json_str,
-                        file_name=f"rds_{report_type}_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                        mime="application/json",
-                        use_container_width=True
-                    )
-            
-            with col3:
-                if st.button("📈 Export Cost Summary", use_container_width=True):
-                    if st.session_state.current_analysis_mode == 'single':
-                        valid_results = {k: v for k, v in current_results.items() if 'error' not in v}
-                        
-                        summary_data = []
-                        total_cost = sum([safe_get(r, 'total_cost', 0) for r in valid_results.values()])
-                        
-                        for env, result in valid_results.items():
-                            cost_breakdown = safe_get(result, 'cost_breakdown', {})
-                            result_total_cost = safe_get(result, 'total_cost', 0)
-                            percentage = (result_total_cost / total_cost * 100) if total_cost > 0 else 0
-                            
-                            instance_cost_summary = 0
-                            if 'writer' in result:
-                                instance_cost_summary = safe_get(cost_breakdown, 'writer_monthly', 0) + \
-                                                        safe_get(cost_breakdown, 'readers_monthly', 0)
-                            else:
-                                instance_cost_summary = safe_get(cost_breakdown, 'instance_monthly', 0)
-
-                            summary_data.append({
-                                'Environment': env,
-                                'Instance Cost': instance_cost_summary,
-                                'Storage Cost': safe_get(cost_breakdown, 'storage_monthly', 0),
-                                'Backup Cost': safe_get(cost_breakdown, 'backup_monthly', 0),
-                                'Features Cost': safe_get(cost_breakdown, 'features_monthly', 0),
-                                'Monthly Total': result_total_cost,
-                                'Annual Total': result_total_cost * 12,
-                                'Percentage of Total': f"{percentage:.1f}%"
-                            })
-                        
-                        filename = f"rds_single_cost_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-                    else:
-                        summary_data = []
-                        total_monthly_cost = 0
-                        
-                        for server_name, server_results in current_results.items():
-                            if 'error' not in server_results:
-                                result = server_results.get('PROD', list(server_results.values())[0])
-                                if 'error' not in result:
-                                    monthly_cost = safe_get(result, 'total_cost', 0)
-                                    total_monthly_cost += monthly_cost
-                        
-                        for server_name, server_results in current_results.items():
-                            if 'error' not in server_results:
-                                result = server_results.get('PROD', list(server_results.values())[0])
-                                if 'error' not in result:
-                                    monthly_cost = safe_get(result, 'total_cost', 0)
-                                    percentage = (monthly_cost / total_monthly_cost * 100) if total_monthly_cost > 0 else 0
-                                    
-                                    instance_type_summary = ""
-                                    vcpus_summary = 0
-                                    ram_gb_summary = 0
-                                    if 'writer' in result:
-                                        writer_info = result['writer']
-                                        instance_type_summary = safe_get_str(writer_info, 'instance_type', 'N/A')
-                                        vcpus_summary = safe_get(writer_info, 'actual_vCPUs', 0)
-                                        ram_gb_summary = safe_get(writer_info, 'actual_RAM_GB', 0)
-                                        if result['readers']:
-                                            instance_type_summary += f" + {len(result['readers'])} Readers"
-                                    else:
-                                        instance_type_summary = safe_get_str(result, 'instance_type', 'N/A')
-                                        vcpus_summary = safe_get(result, 'actual_vCPUs', 0)
-                                        ram_gb_summary = safe_get(result, 'actual_RAM_GB', 0)
-
-                                    summary_data.append({
-                                        'Server Name': server_name,
-                                        'Instance Type': instance_type_summary,
-                                        'Monthly Cost': monthly_cost,
-                                        'Annual Cost': monthly_cost * 12,
-                                        'Percentage of Total': f"{percentage:.1f}%",
-                                        'Cost per vCPU': monthly_cost / max(vcpus_summary, 1),
-                                        'Cost per GB RAM': monthly_cost / max(ram_gb_summary, 1)
-                                    })
-                        
-                        filename = f"rds_bulk_cost_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
-                    
-                    summary_df = pd.DataFrame(summary_data)
-                    csv_summary = summary_df.to_csv(index=False)
-                    
-                    st.download_button(
-                        label="📥 Download Cost Summary",
-                        data=csv_summary,
-                        file_name=filename,
-                        mime="text/csv",
-                        use_container_width=True
-                    )
-            
-            # Key metrics for single server
+            # Key metrics for single server (and potentially aggregated for bulk if desired)
             if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
                 results = st.session_state.results
                 
@@ -2774,6 +2635,11 @@ with tab3:
             if st.button("🚀 Calculate Transfer Options", type="primary", use_container_width=True):
                 with st.spinner("Calculating transfer options..."):
                     try:
+                        # Store these values in session_state for potential use in reports
+                        st.session_state.dx_bandwidth = dx_bandwidth
+                        st.session_state.internet_bandwidth = internet_bandwidth
+                        st.session_state.compression_type = compression_type
+                        
                         # Convert DX bandwidth to Gbps
                         dx_gbps = float(dx_bandwidth.replace('Gbps', ''))
                         
@@ -2878,7 +2744,7 @@ with tab3:
                         reasoning = "Faster AND cheaper than internet transfer"
                     else:
                         recommendation = "🌐 **Consider: DataSync over Internet**"
-                        reasoning = f"More cost-effective option (saves ${cost_difference:.0f})"
+                        reasoning = f"More cost-effective option (saves ${abs(cost_difference):.0f})"
                     
                     st.markdown(f"""
                     <div class="advisory-box">
@@ -2910,7 +2776,7 @@ with tab3:
             st.info("🔄 Bulk transfer analysis: Calculate individual server transfers and sum the results")
             
             servers = st.session_state.on_prem_servers
-            total_data_gb = sum([server['storage_gb'] for server in servers]) * 1.2  # Include logs
+            total_data_gb = sum([server['storage_gb'] for server in servers]) * 1.2  # Include logs (assuming 20% log overhead)
             
             col1, col2 = st.columns(2)
             
@@ -2945,40 +2811,75 @@ with tab3:
                         bulk_dx_gbps = float(bulk_dx_bandwidth.replace('Gbps', ''))
                         total_cost_dx = 0
                         total_cost_internet = 0
-                        max_time_dx = 0
-                        max_time_internet = 0
+                        max_time_dx = 0 # Max time for parallel transfers (bottleneck)
+                        max_time_internet = 0 # Max time for parallel transfers (bottleneck)
                         
+                        # Store individual transfer results for potential detailed view/PDF
+                        individual_transfer_results = {}
+
                         for server in servers:
-                            server_data_gb = server['storage_gb'] * 1.2
+                            server_data_gb = server['storage_gb'] * 1.2 # Apply log overhead per server
                             
-                            # Calculate effective bandwidth (divided if parallel)
-                            effective_dx_gbps = bulk_dx_gbps / max_concurrent if parallel_transfers else bulk_dx_gbps
-                            effective_internet_mbps = 1000 / max_concurrent if parallel_transfers else 1000
-                            
-                            server_results = transfer_calculator.calculate_comprehensive_transfer_analysis(
+                            # Calculate individual server transfer results
+                            server_transfer_results = transfer_calculator.calculate_comprehensive_transfer_analysis(
                                 data_size_gb=server_data_gb,
                                 region=st.session_state.region,
-                                dx_bandwidth_gbps=effective_dx_gbps,
-                                internet_bandwidth_mbps=effective_internet_mbps,
+                                # Use total bandwidth if not parallel, or scaled bandwidth if parallel
+                                dx_bandwidth_gbps=bulk_dx_gbps, 
+                                internet_bandwidth_mbps=1000, # Assuming 1Gbps internet per server for individual calc
                                 compression_type='database'
                             )
                             
                             # Accumulate costs and times
-                            dx_result = server_results['datasync_dx']
-                            internet_result = server_results['datasync_internet']
+                            dx_result_single = server_transfer_results['datasync_dx']
+                            internet_result_single = server_transfer_results['datasync_internet']
                             
-                            total_cost_dx += dx_result.total_cost
-                            total_cost_internet += internet_result.total_cost
+                            total_cost_dx += dx_result_single.total_cost
+                            total_cost_internet += internet_result_single.total_cost
                             
+                            # For parallel: the total time is the time of the longest single transfer
+                            # For sequential: sum up all times
                             if parallel_transfers:
-                                max_time_dx = max(max_time_dx, dx_result.transfer_time_days)
-                                max_time_internet = max(max_time_internet, internet_result.transfer_time_days)
+                                max_time_dx = max(max_time_dx, dx_result_single.transfer_time_days)
+                                max_time_internet = max(max_time_internet, internet_result_single.transfer_time_days)
                             else:
-                                max_time_dx += dx_result.transfer_time_days
-                                max_time_internet += internet_result.transfer_time_days
+                                max_time_dx += dx_result_single.transfer_time_days
+                                max_time_internet += internet_result_single.transfer_time_days
+                            
+                            individual_transfer_results[server['server_name']] = server_transfer_results
+
+                        # If parallel, adjust total time by dividing by max_concurrent
+                        # This is a simplification; a more accurate model would involve network queues etc.
+                        if parallel_transfers:
+                            max_time_dx /= max_concurrent
+                            max_time_internet /= max_concurrent
+
+                        # Store bulk transfer results for the overall view
+                        st.session_state.transfer_results = {
+                            'datasync_dx': TransferMethodResult(
+                                recommended_method='AWS DataSync (Direct Connect)',
+                                transfer_time_hours=max_time_dx * 24,
+                                transfer_time_days=max_time_dx,
+                                total_cost=total_cost_dx,
+                                bandwidth_utilization=0, # This would need more complex calc for bulk
+                                estimated_downtime_hours=0, # This would need more complex calc for bulk
+                                cost_breakdown={}
+                            ),
+                             'datasync_internet': TransferMethodResult(
+                                recommended_method='AWS DataSync (Internet)',
+                                transfer_time_hours=max_time_internet * 24,
+                                transfer_time_days=max_time_internet,
+                                total_cost=total_cost_internet,
+                                bandwidth_utilization=0, # This would need more complex calc for bulk
+                                estimated_downtime_hours=0, # This would need more complex calc for bulk
+                                cost_breakdown={}
+                            )
+                        }
+                        st.session_state.transfer_data_size = total_data_gb
+                        st.session_state.bulk_individual_transfer_results = individual_transfer_results # Store for detailed reports
                         
                         # Display bulk results
-                        st.subheader("📊 Bulk Transfer Results")
+                        st.subheader("📊 Bulk Transfer Results (Aggregated)")
                         
                         col1, col2, col3, col4 = st.columns(4)
                         
@@ -2992,8 +2893,8 @@ with tab3:
                             st.metric("DX Total Cost", f"${total_cost_dx:,.0f}")
                         
                         with col4:
-                            savings = max_time_internet - max_time_dx
-                            st.metric("Time Saved", f"{savings:.1f} days")
+                            savings = max(0, max_time_internet - max_time_dx)
+                            st.metric("Time Saved (DX vs Internet)", f"{savings:.1f} days")
                         
                         # Comparison table
                         bulk_comparison = pd.DataFrame([
@@ -3014,20 +2915,11 @@ with tab3:
                         ])
                         
                         st.dataframe(bulk_comparison, use_container_width=True)
-                        
-                        # Store bulk results
-                        st.session_state.bulk_transfer_summary = {
-                            'total_data_gb': total_data_gb,
-                            'dx_time_days': max_time_dx,
-                            'dx_cost': total_cost_dx,
-                            'internet_time_days': max_time_internet,
-                            'internet_cost': total_cost_internet,
-                            'parallel_enabled': parallel_transfers,
-                            'server_count': len(servers)
-                        }
+                        st.success("✅ Bulk transfer analysis complete!")
                         
                     except Exception as e:
                         st.error(f"❌ Error in bulk transfer calculation: {str(e)}")
+                        st.code(traceback.format_exc())
         else:
             st.info("💡 Upload or add server specifications for bulk analysis first.")
 
@@ -3132,8 +3024,8 @@ with tab4:
             
             total_servers = len(current_results)
             successful_servers = 0
-            total_monthly_cost = 0
-            total_annual_cost = 0
+            total_monthly_cost_display = 0 # Use this for display, based on successful analyses
+            total_annual_cost_display = 0
             server_costs = []
             
             for server_name, server_results in current_results.items():
@@ -3142,8 +3034,8 @@ with tab4:
                     result = server_results.get('PROD', list(server_results.values())[0])
                     if 'error' not in result:
                         monthly_cost = safe_get(result, 'total_cost', 0)
-                        total_monthly_cost += monthly_cost
-                        total_annual_cost += monthly_cost * 12
+                        total_monthly_cost_display += monthly_cost
+                        total_annual_cost_display += monthly_cost * 12
                         
                         instance_type_for_chart = ""
                         vcpus_for_chart = 0
@@ -3171,19 +3063,19 @@ with tab4:
                 with col1:
                     st.markdown(f"""
                     <div class="metric-container">
-                        <div class="metric-value">${total_monthly_cost:,.0f}</div>
+                        <div class="metric-value">${total_monthly_cost_display:,.0f}</div>
                         <div class="metric-label">Total Monthly Cost (All Servers)</div>
                     </div>
                     """, unsafe_allow_html=True)
                 with col2:
                     st.markdown(f"""
                     <div class="metric-container">
-                        <div class="metric-value">${total_annual_cost:,.0f}</div>
+                        <div class="metric-value">${total_annual_cost_display:,.0f}</div>
                         <div class="metric-label">Total Annual Cost (All Servers)</div>
                     </div>
                     """, unsafe_allow_html=True)
                 with col3:
-                    avg_cost_per_server = total_monthly_cost / successful_servers
+                    avg_cost_per_server = total_monthly_cost_display / successful_servers
                     st.markdown(f"""
                     <div class="metric-container">
                         <div class="metric-value">${avg_cost_per_server:,.0f}</div>
@@ -3237,8 +3129,8 @@ with tab4:
             """, unsafe_allow_html=True)
         
         # Compare transfer costs with infrastructure costs
-        if st.session_state.results:
-            valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v}
+        if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+            valid_results = {k: v for k: v in st.session_state.results.items() if 'error' not in v}
             if valid_results:
                 prod_result = valid_results.get('PROD', list(valid_results.values())[0])
                 monthly_infrastructure_cost = safe_get(prod_result, 'total_cost', 0)
@@ -3278,6 +3170,39 @@ with tab4:
                     • Transfer is a one-time cost vs recurring monthly infrastructure costs
                 </div>
                 """, unsafe_allow_html=True)
+        elif st.session_state.current_analysis_mode == 'bulk' and hasattr(st.session_state, 'bulk_transfer_summary') and st.session_state.bulk_transfer_summary:
+            bulk_summary = st.session_state.bulk_transfer_summary
+            total_monthly_infrastructure_cost_bulk = sum([safe_get(s.get('PROD', {}), 'total_cost', 0) for s in st.session_state.bulk_results.values() if 'error' not in s])
+
+            st.markdown("**💡 Cost Comparison: Bulk Transfer vs Infrastructure**")
+            comparison_data_bulk = {
+                'Category': ['Total Monthly Infrastructure', 'One-time Bulk Transfer (DX)', 'One-time Bulk Transfer (Internet)'],
+                'Cost': [total_monthly_infrastructure_cost_bulk, bulk_summary['dx_cost'], bulk_summary['internet_cost']],
+                'Type': ['Recurring', 'One-time', 'One-time']
+            }
+            fig_bulk = px.bar(
+                comparison_data_bulk,
+                x='Category',
+                y='Cost',
+                color='Type',
+                title='💰 Bulk Transfer Cost vs Total Infrastructure Cost Comparison',
+                text='Cost'
+            )
+            fig_bulk.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+            fig_bulk.update_layout(height=400)
+            st.plotly_chart(fig_bulk, use_container_width=True)
+
+            dx_percentage_bulk = (bulk_summary['dx_cost'] / total_monthly_infrastructure_cost_bulk) * 100 if total_monthly_infrastructure_cost_bulk > 0 else 0
+            internet_percentage_bulk = (bulk_summary['internet_cost'] / total_monthly_infrastructure_cost_bulk) * 100 if total_monthly_infrastructure_cost_bulk > 0 else 0
+
+            st.markdown(f"""
+            <div class="advisory-box">
+                <strong>Bulk Transfer Cost Analysis:</strong><br>
+                • DataSync over Direct Connect cost represents {dx_percentage_bulk:.1f}% of total monthly infrastructure cost<br>
+                • DataSync over Internet cost represents {internet_percentage_bulk:.1f}% of total monthly infrastructure cost<br>
+                • Transfer is a one-time cost for the entire migration vs recurring monthly infrastructure costs
+            </div>
+            """, unsafe_allow_html=True)
 
 # ================================
 # TAB 5: AI INSIGHTS
@@ -3291,7 +3216,7 @@ with tab5:
     else:
         ai_insights = st.session_state.ai_insights
         
-        if "error" in ai_insights:
+        if "error" in ai_insights and ai_insights["error"]: # Check if error key exists and has a value
             st.error(f"❌ Error retrieving AI insights: {ai_insights['error']}")
         else:
             st.markdown("""
@@ -3355,20 +3280,29 @@ with tab5:
 # ================================
 # TAB 6: REPORTS
 # ================================
-# In TAB 6: Reports section, around line 1800-2000
-# Replace the existing bulk report generation code with:
-
 
 with tab6:
     st.header("📋 PDF Report Generator")
 
-    if st.session_state.bulk_results:
+    current_analysis_results = None
+    current_server_specs_for_pdf = None
+
+    if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+        current_analysis_results = st.session_state.results
+        current_server_specs_for_pdf = st.session_state.get('current_server_spec')
+        analysis_mode_for_pdf = 'single'
+    elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+        current_analysis_results = st.session_state.bulk_results
+        current_server_specs_for_pdf = st.session_state.get('on_prem_servers')
+        analysis_mode_for_pdf = 'bulk'
+    
+    if current_analysis_results:
         if st.button("📄 Generate PDF Report"):
             with st.spinner("Generating PDF..."):
                 pdf_bytes = generate_enhanced_pdf_report(
-                    analysis_results=st.session_state.bulk_results,
-                    analysis_mode='bulk',
-                    server_specs=st.session_state.on_prem_servers,
+                    analysis_results=current_analysis_results,
+                    analysis_mode=analysis_mode_for_pdf,
+                    server_specs=current_server_specs_for_pdf,
                     ai_insights=st.session_state.ai_insights,
                     transfer_results=st.session_state.transfer_results
                 )
@@ -3378,20 +3312,20 @@ with tab6:
                     st.download_button(
                         label="📥 Download PDF",
                         data=pdf_bytes,
-                        file_name="aws_migration_report.pdf",
+                        file_name=f"aws_migration_report_{analysis_mode_for_pdf}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                         mime="application/pdf"
                     )
                 else:
                     st.error("Failed to generate the PDF report.")
     else:
-        st.warning("Please run an analysis first before generating the report.")
+        st.warning("Please run an analysis first (Single or Bulk) before generating the PDF report.")
 
     st.header("📋 Export & Reporting")
     
+    # Bulk Report Generation (Chunked)
     if st.session_state.current_analysis_mode == 'bulk' and st.session_state.on_prem_servers:
         
-        # Add chunked processing option for large bulk reports
-        if len(st.session_state.on_prem_servers) > 20:
+        if len(st.session_state.on_prem_servers) > 20: # Suggest chunked processing for large datasets
             st.info(f"📊 Large dataset detected ({len(st.session_state.on_prem_servers)} servers). Using chunked processing for optimal performance.")
             
             chunk_size = st.slider(
@@ -3402,36 +3336,77 @@ with tab6:
                 help="Smaller chunks use less memory but take longer"
             )
             
-            if st.button("📄 Generate Bulk Report (Chunked)", type="primary", use_container_width=True):
+            if st.button("📄 Generate Bulk Report (Chunked Analysis)", type="primary", use_container_width=True):
                 with st.spinner("Generating bulk report in chunks..."):
                     try:
-                        # Use chunked processing
-                        enhanced_generator = st.session_state.enhanced_report_generator
-                        processed_chunks = enhanced_generator.generate_bulk_report_in_chunks(
+                        # Use StreamlitEnhancedReportGenerator for chunked processing
+                        # This processes chunks of servers and updates bulk_results
+                        enhanced_generator_for_chunks = StreamlitEnhancedReportGenerator() # Re-instantiate if necessary
+                        processed_results_chunks = enhanced_generator_for_chunks.generate_bulk_report_in_chunks(
                             st.session_state.on_prem_servers, 
                             chunk_size=chunk_size
                         )
                         
-                        # Combine results from all chunks
-                        all_results = {}
-                        for chunk in processed_chunks:
-                            for server_result in chunk:
-                                if 'error' not in server_result:
-                                    server_name = server_result.get('server_name', f'Server_{len(all_results)}')
-                                    all_results[server_name] = server_result
+                        # Flatten the list of lists into a single dictionary of results
+                        all_results_flattened = {}
+                        for chunk in processed_results_chunks:
+                            for server_result_dict in chunk:
+                                if 'error' not in server_result_dict:
+                                    server_name = next(iter(server_result_dict.keys())) # Get server name assuming it's the key
+                                    all_results_flattened[server_name] = server_result_dict[server_name]
+                                else:
+                                    # Handle errors from chunked processing if needed
+                                    st.warning(f"Error in chunked processing for a server: {server_result_dict.get('error', 'Unknown error')}")
+
+                        st.session_state.bulk_results = all_results_flattened
                         
-                        # Generate final report
-                        st.session_state.bulk_results = all_results
-                        st.success(f"✅ Bulk report generated successfully! Processed {len(all_results)} servers.")
+                        # Re-calculate AI insights for the newly processed bulk results
+                        successful_analyses_chunked = len([r for r in st.session_state.bulk_results.values() if 'error' not in r])
+                        total_monthly_cost_chunked = sum([safe_get(r.get('PROD', {}), 'total_cost', 0) for r in st.session_state.bulk_results.values() if 'error' not in r])
+
+                        if successful_analyses_chunked > 0 and st.session_state.calculator.ai_client:
+                            with st.spinner("🤖 Regenerating AI insights for chunked bulk analysis..."):
+                                try:
+                                    aggregated_results_for_ai_chunked = {}
+                                    for server_name, server_data in st.session_state.bulk_results.items():
+                                        if 'error' not in server_data:
+                                            aggregated_results_for_ai_chunked[server_name] = server_data.get('PROD', list(server_data.values())[0])
+                                    
+                                    bulk_inputs_for_ai_chunked = {
+                                        "region": st.session_state.region,
+                                        "target_engine": st.session_state.target_engine,
+                                        "source_engine": st.session_state.source_engine,
+                                        "deployment": st.session_state.deployment_option,
+                                        "storage_type": st.session_state.storage_type,
+                                        "num_servers_analyzed": successful_analyses_chunked,
+                                        "total_monthly_cost": total_monthly_cost_chunked,
+                                        "avg_cpu_cores": sum([safe_get(s.get('PROD', {}).get('writer', {}), 'actual_vCPUs', safe_get(s.get('PROD', {}), 'actual_vCPUs', 0)) for s in st.session_state.bulk_results.values() if 'error' not in s]) / successful_analyses_chunked if successful_analyses_chunked > 0 else 0,
+                                        "avg_ram_gb": sum([safe_get(s.get('PROD', {}).get('writer', {}), 'actual_RAM_GB', safe_get(s.get('PROD', {}), 'actual_RAM_GB', 0)) for s in st.session_state.bulk_results.values() if 'error' not in s]) / successful_analyses_chunked if successful_analyses_chunked > 0 else 0,
+                                        "avg_storage_gb": sum([safe_get(s.get('PROD', {}), 'storage_GB', 0) for s in st.session_state.bulk_results.values() if 'error' not in s]) / successful_analyses_chunked if successful_analyses_chunked > 0 else 0,
+                                    }
+
+                                    st.session_state.ai_insights = asyncio.run(st.session_state.calculator.generate_ai_insights(aggregated_results_for_ai_chunked, bulk_inputs_for_ai_chunked))
+                                    st.success("✅ AI insights for chunked bulk analysis generated!")
+                                except Exception as e:
+                                    st.warning(f"AI insights generation for chunked bulk failed: {e}")
+                                    st.code(traceback.format_exc())
+                                    st.session_state.ai_insights = None
+                        else:
+                            st.info("No successful server analyses in chunks or AI client not ready; skipping AI insights generation.")
+                            st.session_state.ai_insights = None
+                        
+                        st.success(f"✅ Bulk report generated successfully! Processed {len(all_results_flattened)} servers.")
                         
                     except Exception as e:
                         st.error(f"❌ Error generating chunked bulk report: {str(e)}")
+                        st.code(traceback.format_exc())
         
         else:
-            # Use regular processing for smaller datasets
-            if st.button("📄 Generate Standard Bulk Report", type="primary", use_container_width=True):
-                # Your existing bulk processing code here
-                pass
+            # The "Generate Standard Bulk Report" button is now handled by the general PDF button above
+            # This 'else' block will not typically have a direct button unless you want separate
+            # buttons for non-PDF bulk reports (e.g., just display in UI, or a different export type)
+            pass
+        
         # Additional export options for reports tab
         st.subheader("📊 Additional Export Options")
         
@@ -3482,8 +3457,45 @@ with tab6:
                                 mime="text/markdown",
                                 use_container_width=True
                             )
+                        else:
+                             st.info("No valid sizing results found for Executive Summary.")
+                elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+                    # Generate Executive Summary for Bulk Analysis
+                    total_servers_summary = len(st.session_state.bulk_results)
+                    successful_servers_summary = sum(1 for result in st.session_state.bulk_results.values() if 'error' not in result)
+                    total_monthly_cost_summary = sum(safe_get(result.get('PROD', {}), 'total_cost', 0) for result in st.session_state.bulk_results.values() if 'error' not in result)
+                    
+                    exec_summary_bulk = f"""
+# Executive Summary - AWS RDS Bulk Migration Analysis
+
+## Migration Overview
+- **Source Engine:** {st.session_state.source_engine}
+- **Target Engine:** {st.session_state.target_engine}
+- **Migration Type:** {st.session_state.calculator.migration_profile.migration_type.value.title() if st.session_state.calculator.migration_profile else 'Unknown'}
+
+## Aggregate Cost Analysis
+- **Total Servers Analyzed:** {total_servers_summary}
+- **Successful Analyses:** {successful_servers_summary}
+- **Total Monthly Cost (Aggregated):** ${total_monthly_cost_summary:,.2f}
+- **Total Annual Cost (Aggregated):** ${total_monthly_cost_summary * 12:,.2f}
+
+## Key AI Insights (Overall Migration)
+"""
+                    if st.session_state.ai_insights and 'ai_analysis' in st.session_state.ai_insights:
+                        exec_summary_bulk += f"{st.session_state.ai_insights['ai_analysis'][:500]}...\n"
+                    else:
+                        exec_summary_bulk += "No AI insights available for the overall bulk migration.\n"
+                    
+                    st.download_button(
+                        label="📥 Download Executive Summary",
+                        data=exec_summary_bulk,
+                        file_name=f"executive_summary_bulk_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+
                 else:
-                    st.info("Executive summary available for single server analysis only.")
+                    st.info("Executive summary available after running an analysis.")
         
         with col2:
             st.markdown("**📋 Technical Specifications**")
@@ -3511,8 +3523,30 @@ with tab6:
                         mime="application/json",
                         use_container_width=True
                     )
+                elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+                    bulk_tech_specs = {
+                        'analysis_mode': 'bulk',
+                        'migration_config': {
+                            'source_engine': st.session_state.source_engine,
+                            'target_engine': st.session_state.target_engine,
+                            'deployment_option': st.session_state.deployment_option,
+                            'region': st.session_state.region,
+                            'storage_type': st.session_state.storage_type
+                        },
+                        'bulk_servers_specifications': st.session_state.on_prem_servers,
+                        'bulk_recommendations': st.session_state.bulk_results,
+                        'generated_at': datetime.now().isoformat()
+                    }
+                    bulk_tech_specs_json = json.dumps(bulk_tech_specs, indent=2, default=str)
+                    st.download_button(
+                        label="📥 Download Bulk Tech Specs",
+                        data=bulk_tech_specs_json,
+                        file_name=f"technical_specifications_bulk_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
                 else:
-                    st.info("Technical specifications available for single server analysis only.")
+                    st.info("Technical specifications available after running an analysis.")
         
         with col3:
             st.markdown("**💰 Cost Analysis Report**")
@@ -3578,24 +3612,24 @@ with tab6:
                     use_container_width=True
                 )
 
-    # Transfer Analysis Report
+    # Transfer Analysis Report (for both single and bulk)
     if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
         st.subheader("🚛 Transfer Analysis Report")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("📊 Export Transfer Analysis", use_container_width=True):
+            if st.button("📊 Export Transfer Analysis (JSON)", use_container_width=True):
                 transfer_export_data = {
                     'transfer_analysis': {
                         'data_size_gb': st.session_state.transfer_data_size,
                         'analysis_date': datetime.now().isoformat(),
                         'configuration': {
-                            'dx_bandwidth': st.session_state.get('dx_bandwidth', '10Gbps'),
-                            'internet_bandwidth_mbps': st.session_state.get('internet_bandwidth', 100),
-                            'compression_type': st.session_state.get('compression_type', 'database'),
-                            'time_sensitivity': st.session_state.get('time_sensitivity', 'medium'),
-                            'cost_sensitivity': st.session_state.get('cost_sensitivity', 'medium')
+                            'dx_bandwidth': st.session_state.get('dx_bandwidth_select', '10Gbps') if st.session_state.current_analysis_mode == 'single' else st.session_state.get('bulk_dx_bandwidth_select', '10Gbps'),
+                            'internet_bandwidth_mbps': st.session_state.get('internet_bandwidth_input', 100) if st.session_state.current_analysis_mode == 'single' else 1000, # Use fixed 1000 for bulk if not specified
+                            'compression_type': st.session_state.get('compression_type_select', 'database'),
+                            'parallel_transfers': st.session_state.get('parallel_transfers_checkbox', False) if st.session_state.current_analysis_mode == 'bulk' else False,
+                            'max_concurrent_transfers': st.session_state.get('max_concurrent_transfers', 1) if st.session_state.current_analysis_mode == 'bulk' else 1
                         },
                         'results': {}
                     }
@@ -3612,6 +3646,22 @@ with tab6:
                         'estimated_downtime_hours': result.estimated_downtime_hours
                     }
                 
+                # Add individual server transfer results for bulk mode
+                if st.session_state.current_analysis_mode == 'bulk' and hasattr(st.session_state, 'bulk_individual_transfer_results'):
+                    transfer_export_data['transfer_analysis']['individual_server_transfer_results'] = {}
+                    for server_name, results_dict in st.session_state.bulk_individual_transfer_results.items():
+                        individual_server_results_clean = {k: {
+                            'recommended_method': v.recommended_method,
+                            'transfer_time_hours': v.transfer_time_hours,
+                            'transfer_time_days': v.transfer_time_days,
+                            'total_cost': v.total_cost,
+                            'cost_breakdown': v.cost_breakdown,
+                            'bandwidth_utilization': v.bandwidth_utilization,
+                            'estimated_downtime_hours': v.estimated_downtime_hours
+                        } for k, v in results_dict.items()}
+                        transfer_export_data['transfer_analysis']['individual_server_transfer_results'][server_name] = individual_server_results_clean
+
+
                 transfer_json = json.dumps(transfer_export_data, indent=2, default=str)
                 
                 st.download_button(
