@@ -23,7 +23,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from comprehensive_pdf_generator import ComprehensiveReportGenerator, generate_ultra_comprehensive_pdf_report
+from comprehensive_pdf_generator import enhanced_report_generator, generate_ultra_comprehensive_pdf_report
 
 # Authentication imports
 import bcrypt
@@ -2101,15 +2101,6 @@ if st.button("🚀 Start Bulk Analysis", type="primary", use_container_width=Tru
     results_placeholder = st.empty()
     
     bulk_results = {}
-     # --- FIX START ---
-    # Ensure 'servers' is defined from session state before use
-    if 'on_prem_servers' in st.session_state and st.session_state.on_prem_servers:
-        servers = st.session_state.on_prem_servers
-    else:
-        st.error("No servers found in the list for bulk analysis. Please add servers in the 'Server Specifications' tab.")
-        # Stop execution here if no servers are available to prevent further errors
-        st.stop() 
-    # --- FIX END ---
     total_servers = len(servers)
     
     # Initialize total_monthly_cost for AI insights calculation
