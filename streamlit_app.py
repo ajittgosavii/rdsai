@@ -2362,46 +2362,81 @@ with tab3:
                     progress_bar.progress(1.0)
                     status_placeholder.success(f"✅ Bulk analysis complete! {successful_analyses} successful, {failed_analyses} failed")
                     
-                    # --- AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
-                    if successful_analyses > 0 and calculator.ai_client: # Only attempt AI insights if there are successful analyses and AI client is ready
-                        with st.spinner("🤖 Generating AI insights for bulk analysis..."):
-                            try:
-                                # Aggregate all successful results for AI analysis
-                                aggregated_results_for_ai = {}
-                                for server_name, server_data in bulk_results.items():
-                                    if 'error' not in server_data:
-                                        # Assuming 'PROD' is the key for the main result
-                                        aggregated_results_for_ai[server_name] = server_data.get('PROD', list(server_data.values())[0])
-
-                                # Create input for the overall bulk AI insight
-                                bulk_inputs_for_ai = {
-                                    "region": st.session_state.region,
-                                    "target_engine": st.session_state.target_engine,
-                                    "source_engine": st.session_state.source_engine,
-                                    "deployment": st.session_state.deployment_option,
-                                    "storage_type": st.session_state.storage_type,
-                                    "num_servers_analyzed": successful_analyses,
-                                    "total_monthly_cost": total_monthly_cost_for_ai_insights, # Correctly using calculated total_monthly_cost
-                                    "avg_cpu_cores": sum([safe_get(s.get('PROD', {}).get('writer', {}), 'actual_vCPUs', safe_get(s.get('PROD', {}), 'actual_vCPUs', 0)) for s in bulk_results.values() if 'error' not in s]) / successful_analyses if successful_analyses > 0 else 0,
-                                    "avg_ram_gb": sum([safe_get(s.get('PROD', {}).get('writer', {}), 'actual_RAM_GB', safe_get(s.get('PROD', {}), 'actual_RAM_GB', 0)) for s in bulk_results.values() if 'error' not in s]) / successful_analyses if successful_analyses > 0 else 0,
-                                    "avg_storage_gb": sum([safe_get(s.get('PROD', {}), 'storage_GB', 0) for s in bulk_results.values() if 'error' not in s]) / successful_analyses if successful_analyses > 0 else 0,
-                                    # You can add more aggregated metrics here
-                                }
-
-                                bulk_ai_insights = asyncio.run(calculator.generate_ai_insights(aggregated_results_for_ai, bulk_inputs_for_ai))
-                                st.session_state.ai_insights = bulk_ai_insights
-                                st.success("✅ AI insights for bulk analysis generated!")
-                            except Exception as e:
-                                st.warning(f"AI insights generation for bulk failed: {e}")
-                                st.code(traceback.format_exc()) # Log the full traceback
-                                st.session_state.ai_insights = None
-                    elif successful_analyses == 0:
-                        st.info("No successful server analyses found; skipping AI insights generation for bulk.")
-                        st.session_state.ai_insights = None
+                    # Replace the bulk AI insights generation section in Tab 3 (around line 1200)
+# --- AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
+if successful_analyses > 0 and calculator.ai_client:
+    with st.spinner("🤖 Generating AI insights for bulk analysis..."):
+        try:
+            # Aggregate all successful results for AI analysis
+            aggregated_results_for_ai = {}
+            for server_name, server_data in bulk_results.items():
+                if 'error' not in server_data:
+                    # Get the PROD environment result, or first available result
+                    if 'PROD' in server_data:
+                        aggregated_results_for_ai[server_name] = server_data['PROD']
                     else:
-                        st.info("Anthropic API key not provided or AI client not ready; skipping AI insights generation.")
-                        st.session_state.ai_insights = None # Ensure it's explicitly None if skipped
-                    # --- END AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
+                        # Get first non-error result
+                        for env_key, env_result in server_data.items():
+                            if 'error' not in env_result:
+                                aggregated_results_for_ai[server_name] = env_result
+                                break
+
+            # Create input for the overall bulk AI insight
+            bulk_inputs_for_ai = {
+                "region": st.session_state.region,
+                "target_engine": st.session_state.target_engine,
+                "source_engine": st.session_state.source_engine,
+                "deployment": st.session_state.deployment_option,
+                "storage_type": st.session_state.storage_type,
+                "num_servers_analyzed": successful_analyses,
+                "total_monthly_cost": total_monthly_cost_for_ai_insights,
+                "analysis_mode": "bulk",
+                "servers_summary": {
+                    "total_servers": len(st.session_state.on_prem_servers),
+                    "successful_analyses": successful_analyses,
+                    "failed_analyses": len(st.session_state.on_prem_servers) - successful_analyses
+                }
+            }
+
+            # Calculate averages safely
+            if successful_analyses > 0:
+                total_vcpus = 0
+                total_ram = 0
+                total_storage = 0
+                
+                for server_result in aggregated_results_for_ai.values():
+                    if 'writer' in server_result:
+                        total_vcpus += safe_get(server_result['writer'], 'actual_vCPUs', 0)
+                        total_ram += safe_get(server_result['writer'], 'actual_RAM_GB', 0)
+                    else:
+                        total_vcpus += safe_get(server_result, 'actual_vCPUs', 0)
+                        total_ram += safe_get(server_result, 'actual_RAM_GB', 0)
+                    
+                    total_storage += safe_get(server_result, 'storage_GB', 0)
+                
+                bulk_inputs_for_ai.update({
+                    "avg_cpu_cores": total_vcpus / successful_analyses,
+                    "avg_ram_gb": total_ram / successful_analyses,
+                    "avg_storage_gb": total_storage / successful_analyses
+                })
+            
+            # Generate AI insights
+            bulk_ai_insights = asyncio.run(calculator.generate_ai_insights(aggregated_results_for_ai, bulk_inputs_for_ai))
+            st.session_state.ai_insights = bulk_ai_insights
+            st.success("✅ AI insights for bulk analysis generated!")
+            
+        except Exception as e:
+            st.warning(f"AI insights generation for bulk failed: {e}")
+            st.code(traceback.format_exc())
+            st.session_state.ai_insights = None
+            
+elif successful_analyses == 0:
+    st.info("No successful server analyses found; skipping AI insights generation for bulk.")
+    st.session_state.ai_insights = None
+elif not calculator.ai_client:
+    st.info("Anthropic API key not provided or AI client not ready; skipping AI insights generation.")
+    st.session_state.ai_insights = None
+# --- END AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
 
                     if successful_analyses > 0:
                         st.subheader("📊 Bulk Analysis Results") 
@@ -3205,21 +3240,114 @@ with tab4:
             </div>
             """, unsafe_allow_html=True)
 
+# Replace the AI Insights tab (Tab 5) section
 # ================================
-# TAB 5: AI INSIGHTS
+# TAB 5: AI INSIGHTS - ENHANCED FOR BULK ANALYSIS
 # ================================
 
 with tab5:
     st.header("🤖 AI Insights & Recommendations")
     
+    # Check for AI insights availability
     if not st.session_state.ai_insights:
         st.info("💡 Generate sizing recommendations first to enable AI insights.")
+        
+        # Show what's needed for AI insights
+        st.subheader("🔧 AI Insights Requirements")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            api_key_status = "✅ Available" if (st.session_state.user_claude_api_key_input or 
+                                               ("anthropic" in st.secrets and "ANTHROPIC_API_KEY" in st.secrets["anthropic"]) or
+                                               os.environ.get('ANTHROPIC_API_KEY')) else "❌ Missing"
+            st.write(f"**Anthropic API Key:** {api_key_status}")
+            
+            analysis_status = "✅ Complete" if (st.session_state.results or st.session_state.bulk_results) else "❌ Pending"
+            st.write(f"**Analysis Results:** {analysis_status}")
+        
+        with col2:
+            mode = st.session_state.current_analysis_mode.title()
+            st.write(f"**Analysis Mode:** {mode}")
+            
+            if st.session_state.current_analysis_mode == 'single':
+                server_spec_status = "✅ Available" if 'current_server_spec' in st.session_state else "❌ Missing"
+                st.write(f"**Server Specs:** {server_spec_status}")
+            else:
+                server_count = len(st.session_state.on_prem_servers) if st.session_state.on_prem_servers else 0
+                st.write(f"**Bulk Servers:** {server_count} configured")
+        
+        if api_key_status == "❌ Missing":
+            st.warning("⚠️ Please provide your Anthropic API key at the top of the page to enable AI insights.")
+    
     else:
         ai_insights = st.session_state.ai_insights
         
-        if "error" in ai_insights and ai_insights["error"]: # Check if error key exists and has a value
+        # Check for errors in AI insights
+        if isinstance(ai_insights, dict) and ai_insights.get("error"):
             st.error(f"❌ Error retrieving AI insights: {ai_insights['error']}")
+            
+            # Offer to retry AI insights generation
+            if st.button("🔄 Retry AI Insights Generation", type="primary"):
+                with st.spinner("🤖 Regenerating AI insights..."):
+                    try:
+                        calculator = st.session_state.calculator
+                        
+                        if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
+                            # Retry single server AI insights
+                            server_spec = st.session_state.current_server_spec
+                            inputs = {
+                                "region": st.session_state.region,
+                                "target_engine": st.session_state.target_engine,
+                                "source_engine": st.session_state.source_engine,
+                                "deployment": st.session_state.deployment_option,
+                                "storage_type": st.session_state.storage_type,
+                                "on_prem_cores": server_spec['cores'],
+                                "peak_cpu_percent": server_spec['cpu_util'],
+                                "on_prem_ram_gb": server_spec['ram'],
+                                "peak_ram_percent": server_spec['ram_util']
+                            }
+                            
+                            ai_insights = asyncio.run(calculator.generate_ai_insights(st.session_state.results, inputs))
+                            st.session_state.ai_insights = ai_insights
+                            st.success("✅ AI insights regenerated successfully!")
+                            st.rerun()
+                            
+                        elif st.session_state.current_analysis_mode == 'bulk' and st.session_state.bulk_results:
+                            # Retry bulk AI insights using the fixed logic
+                            successful_results = {k: v for k, v in st.session_state.bulk_results.items() if 'error' not in v}
+                            
+                            if successful_results:
+                                aggregated_results = {}
+                                for server_name, server_data in successful_results.items():
+                                    if 'PROD' in server_data:
+                                        aggregated_results[server_name] = server_data['PROD']
+                                    else:
+                                        for env_key, env_result in server_data.items():
+                                            if 'error' not in env_result:
+                                                aggregated_results[server_name] = env_result
+                                                break
+                                
+                                bulk_inputs = {
+                                    "region": st.session_state.region,
+                                    "target_engine": st.session_state.target_engine,
+                                    "source_engine": st.session_state.source_engine,
+                                    "deployment": st.session_state.deployment_option,
+                                    "storage_type": st.session_state.storage_type,
+                                    "num_servers_analyzed": len(successful_results),
+                                    "analysis_mode": "bulk"
+                                }
+                                
+                                ai_insights = asyncio.run(calculator.generate_ai_insights(aggregated_results, bulk_inputs))
+                                st.session_state.ai_insights = ai_insights
+                                st.success("✅ Bulk AI insights regenerated successfully!")
+                                st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Failed to regenerate AI insights: {e}")
+                        
         else:
+            # Display AI insights successfully
             st.markdown("""
             <div class="ai-insight-card">
                 <h3>🤖 AI-Powered Analysis from Claude</h3>
@@ -3227,21 +3355,32 @@ with tab5:
             </div>
             """, unsafe_allow_html=True)
             
+            # Show analysis type
+            analysis_type = st.session_state.current_analysis_mode.title()
+            st.subheader(f"📊 {analysis_type} Analysis AI Insights")
+            
+            # Key metrics row
             col1, col2, col3 = st.columns(3)
             
             with col1:
+                risk_level = ai_insights.get('risk_level', 'N/A')
                 st.markdown(f"""
                 <div class="metric-container">
-                    <div class="metric-value">{ai_insights.get('risk_level', 'N/A')}</div>
+                    <div class="metric-value">{risk_level}</div>
                     <div class="metric-label">Migration Risk Level</div>
                 </div>
                 """, unsafe_allow_html=True)
             
             with col2:
-                cost_opt_potential = ai_insights.get('cost_optimization_potential', 0) * 100
+                cost_opt_potential = ai_insights.get('cost_optimization_potential', 0)
+                if isinstance(cost_opt_potential, (int, float)):
+                    cost_opt_display = f"{cost_opt_potential * 100:.0f}%"
+                else:
+                    cost_opt_display = "N/A"
+                    
                 st.markdown(f"""
                 <div class="metric-container">
-                    <div class="metric-value">{cost_opt_potential:.0f}%</div>
+                    <div class="metric-value">{cost_opt_display}</div>
                     <div class="metric-label">Cost Optimization Potential</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -3249,37 +3388,127 @@ with tab5:
             with col3:
                 writers = ai_insights.get('recommended_writers', 'N/A')
                 readers = ai_insights.get('recommended_readers', 'N/A')
+                
                 if writers != 'N/A' and readers != 'N/A':
-                    st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-value">{writers}W / {readers}R</div>
-                        <div class="metric-label">AI Recommended Arch.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    arch_display = f"{writers}W / {readers}R"
                 else:
-                     st.markdown(f"""
-                    <div class="metric-container">
-                        <div class="metric-value">N/A</div>
-                        <div class="metric-label">AI Recommended Arch.</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    arch_display = "Standard RDS"
+                    
+                st.markdown(f"""
+                <div class="metric-container">
+                    <div class="metric-value">{arch_display}</div>
+                    <div class="metric-label">AI Recommended Arch.</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            st.subheader("Comprehensive AI Analysis")
-            st.markdown('<div class="advisory-box">', unsafe_allow_html=True)
-            st.write(ai_insights.get("ai_analysis", "No detailed AI analysis available."))
-            st.markdown('</div>', unsafe_allow_html=True)
+            # Comprehensive AI Analysis
+            st.subheader("🔍 Comprehensive AI Analysis")
             
-            st.subheader("Recommended Migration Phases")
-            if ai_insights.get("recommended_migration_phases"):
+            ai_analysis_text = ai_insights.get("ai_analysis", "No detailed AI analysis available.")
+            
+            if ai_analysis_text and ai_analysis_text != "No detailed AI analysis available.":
+                st.markdown('<div class="advisory-box">', unsafe_allow_html=True)
+                
+                # Split long AI analysis into paragraphs for better readability
+                if len(ai_analysis_text) > 1000:
+                    paragraphs = ai_analysis_text.split('\n\n')
+                    for paragraph in paragraphs:
+                        if paragraph.strip():
+                            st.write(paragraph.strip())
+                else:
+                    st.write(ai_analysis_text)
+                    
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("AI analysis is generating. Please wait or refresh the page.")
+            
+            # Migration Phases (if available)
+            st.subheader("📅 Recommended Migration Phases")
+            
+            migration_phases = ai_insights.get("recommended_migration_phases")
+            if migration_phases and isinstance(migration_phases, list):
                 st.markdown('<div class="phase-timeline">', unsafe_allow_html=True)
-                for i, phase in enumerate(ai_insights["recommended_migration_phases"]):
+                for i, phase in enumerate(migration_phases):
                     st.markdown(f"**Phase {i+1}:** {phase}")
                 st.markdown('</div>', unsafe_allow_html=True)
             else:
-                st.info("No specific migration phases recommended by AI.")
+                # Provide default migration phases
+                default_phases = [
+                    "Assessment & Discovery (2-3 weeks)",
+                    "Schema Conversion & Testing (3-4 weeks)", 
+                    "Data Migration Setup (1-2 weeks)",
+                    "Application Code Conversion (4-6 weeks)",
+                    "User Acceptance Testing (2-3 weeks)",
+                    "Production Cutover (1 week)",
+                    "Post-Migration Optimization (2-4 weeks)"
+                ]
+                
+                st.markdown('<div class="phase-timeline">', unsafe_allow_html=True)
+                st.info("Using standard migration phases (AI-specific phases not available)")
+                for i, phase in enumerate(default_phases):
+                    st.markdown(f"**Phase {i+1}:** {phase}")
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Additional insights for bulk analysis
+            if st.session_state.current_analysis_mode == 'bulk':
+                st.subheader("📊 Bulk Analysis Specific Insights")
+                
+                total_servers = len(st.session_state.bulk_results) if st.session_state.bulk_results else 0
+                successful_servers = len([r for r in st.session_state.bulk_results.values() if 'error' not in r]) if st.session_state.bulk_results else 0
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("Total Servers Analyzed", total_servers)
+                
+                with col2:
+                    st.metric("Successful Analyses", successful_servers)
+                
+                with col3:
+                    success_rate = (successful_servers / total_servers * 100) if total_servers > 0 else 0
+                    st.metric("Success Rate", f"{success_rate:.1f}%")
+                
+                if successful_servers < total_servers:
+                    failed_servers = total_servers - successful_servers
+                    st.warning(f"⚠️ {failed_servers} servers failed analysis. Check server specifications and try again.")
+            
+            # Export AI insights
+            st.subheader("📄 Export AI Insights")
+            
+            if st.button("📥 Export AI Insights as Text", use_container_width=True):
+                insights_export = f"""# AWS RDS Migration AI Insights
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Analysis Mode: {st.session_state.current_analysis_mode.title()}
 
+## Risk Assessment
+Migration Risk Level: {ai_insights.get('risk_level', 'N/A')}
+Cost Optimization Potential: {cost_opt_display}
+
+## Recommended Architecture
+{arch_display}
+
+## Comprehensive Analysis
+{ai_analysis_text}
+
+## Migration Phases
+"""
+                
+                if migration_phases:
+                    for i, phase in enumerate(migration_phases):
+                        insights_export += f"{i+1}. {phase}\n"
+                else:
+                    insights_export += "Standard migration phases recommended\n"
+                
+                st.download_button(
+                    label="📥 Download AI Insights",
+                    data=insights_export,
+                    file_name=f"ai_insights_{st.session_state.current_analysis_mode}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+# Replace the PDF generation section in Tab 6 (Reports)
 # ================================
-# TAB 6: REPORTS
+# TAB 6: REPORTS - ENHANCED PDF GENERATION FIX
 # ================================
 
 with tab6:
@@ -3297,31 +3526,193 @@ with tab6:
         current_server_specs_for_pdf = st.session_state.get('on_prem_servers')
         analysis_mode_for_pdf = 'bulk'
     
+    # Enhanced PDF Generation with better error handling
     if current_analysis_results:
-        if st.button("📄 Generate PDF Report"):
-            with st.spinner("Generating PDF..."):
-                pdf_bytes = generate_enhanced_pdf_report(
-                    analysis_results=current_analysis_results,
-                    analysis_mode=analysis_mode_for_pdf,
-                    server_specs=current_server_specs_for_pdf,
-                    ai_insights=st.session_state.ai_insights,
-                    transfer_results=st.session_state.transfer_results
-                )
-
-                if pdf_bytes:
-                    st.success("✅ PDF Report generated successfully!")
-                    st.download_button(
-                        label="📥 Download PDF",
-                        data=pdf_bytes,
-                        file_name=f"aws_migration_report_{analysis_mode_for_pdf}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                        mime="application/pdf"
+        # Show current analysis summary
+        st.subheader("📊 Current Analysis Summary")
+        if analysis_mode_for_pdf == 'single':
+            st.info(f"✅ Single server analysis ready for PDF generation")
+            if 'current_server_spec' in st.session_state:
+                st.write(f"**Server:** {st.session_state.current_server_spec.get('server_name', 'Unknown')}")
+        else:
+            successful_count = len([r for r in current_analysis_results.values() if 'error' not in r])
+            st.info(f"✅ Bulk analysis ready: {successful_count} successful servers")
+        
+        # AI Insights Status
+        if st.session_state.ai_insights:
+            st.success("🤖 AI insights available and will be included")
+        else:
+            st.warning("⚠️ No AI insights available - PDF will be generated without AI analysis")
+        
+        # Transfer Results Status
+        if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
+            st.success("🚛 Transfer analysis available and will be included")
+        else:
+            st.info("💡 No transfer analysis - PDF will be generated without transfer section")
+        
+        # PDF Generation Options
+        st.subheader("⚙️ PDF Generation Options")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            include_detailed_specs = st.checkbox("Include Detailed Server Specifications", value=True)
+            include_cost_breakdown = st.checkbox("Include Cost Breakdown", value=True)
+        
+        with col2:
+            include_migration_timeline = st.checkbox("Include Migration Timeline", value=True)
+            include_risk_assessment = st.checkbox("Include Risk Assessment", value=True)
+        
+        # Generate PDF Button with enhanced error handling
+        if st.button("📄 Generate Enhanced PDF Report", type="primary", use_container_width=True):
+            with st.spinner("Generating Enhanced PDF Report..."):
+                try:
+                    # Validate inputs before PDF generation
+                    validation_errors = []
+                    
+                    if not current_analysis_results:
+                        validation_errors.append("No analysis results available")
+                    
+                    if analysis_mode_for_pdf == 'single' and not current_server_specs_for_pdf:
+                        validation_errors.append("Server specifications missing for single analysis")
+                    
+                    if analysis_mode_for_pdf == 'bulk' and not current_server_specs_for_pdf:
+                        validation_errors.append("Server specifications missing for bulk analysis")
+                    
+                    if validation_errors:
+                        st.error("❌ Validation errors:")
+                        for error in validation_errors:
+                            st.write(f"• {error}")
+                        st.stop()
+                    
+                    # Enhanced PDF generation with better error handling
+                    st.info("🔄 Initializing Enhanced Report Generator...")
+                    
+                    # Create enhanced generator instance
+                    enhanced_generator = EnhancedReportGenerator()
+                    
+                    st.info("🔄 Preparing report data...")
+                    
+                    # Prepare AI insights (ensure it's not None)
+                    ai_insights_for_pdf = st.session_state.ai_insights if st.session_state.ai_insights else {
+                        "risk_level": "Unknown",
+                        "cost_optimization_potential": 0,
+                        "ai_analysis": "AI insights were not available during analysis generation."
+                    }
+                    
+                    # Prepare transfer results
+                    transfer_results_for_pdf = None
+                    if hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results:
+                        transfer_results_for_pdf = st.session_state.transfer_results
+                    
+                    st.info("🔄 Generating comprehensive PDF...")
+                    
+                    # Generate PDF with comprehensive error handling
+                    pdf_bytes = enhanced_generator.generate_comprehensive_pdf_report(
+                        analysis_results=current_analysis_results,
+                        analysis_mode=analysis_mode_for_pdf,
+                        server_specs=current_server_specs_for_pdf,
+                        ai_insights=ai_insights_for_pdf,
+                        transfer_results=transfer_results_for_pdf
                     )
-                else:
-                    st.error("Failed to generate the PDF report.")
+                    
+                    if pdf_bytes:
+                        st.success("✅ Enhanced PDF Report generated successfully!")
+                        
+                        # Calculate file size
+                        file_size_mb = len(pdf_bytes) / (1024 * 1024)
+                        st.info(f"📄 PDF Size: {file_size_mb:.2f} MB")
+                        
+                        # Generate filename with timestamp
+                        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        filename = f"aws_rds_migration_enhanced_{analysis_mode_for_pdf}_{timestamp}.pdf"
+                        
+                        st.download_button(
+                            label="📥 Download Enhanced PDF Report",
+                            data=pdf_bytes,
+                            file_name=filename,
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                        
+                        # Show report contents summary
+                        st.subheader("📋 Report Contents")
+                        contents = [
+                            "✅ Executive Summary",
+                            "✅ Migration Strategy & Planning",
+                            "✅ Technical Specifications",
+                            "✅ Financial Analysis",
+                            "✅ Risk Assessment"
+                        ]
+                        
+                        if ai_insights_for_pdf and 'ai_analysis' in ai_insights_for_pdf:
+                            contents.append("✅ AI-Powered Insights")
+                        
+                        if transfer_results_for_pdf:
+                            contents.append("✅ Data Transfer Analysis")
+                        
+                        for content in contents:
+                            st.write(content)
+                    
+                    else:
+                        st.error("❌ Failed to generate PDF. The report generator returned None.")
+                        st.info("💡 This could be due to:")
+                        st.write("• Missing reportlab dependencies")
+                        st.write("• Memory issues with large datasets")
+                        st.write("• Data formatting problems")
+                        
+                        # Offer alternative export
+                        st.subheader("🔄 Alternative Export Options")
+                        
+                        # JSON export as fallback
+                        if st.button("📊 Export Analysis as JSON (Fallback)", use_container_width=True):
+                            export_data = {
+                                'analysis_mode': analysis_mode_for_pdf,
+                                'analysis_results': current_analysis_results,
+                                'server_specs': current_server_specs_for_pdf,
+                                'ai_insights': ai_insights_for_pdf,
+                                'transfer_results': transfer_results_for_pdf,
+                                'generated_at': datetime.now().isoformat()
+                            }
+                            
+                            json_data = json.dumps(export_data, indent=2, default=str)
+                            
+                            st.download_button(
+                                label="📥 Download JSON Report",
+                                data=json_data,
+                                file_name=f"analysis_report_{timestamp}.json",
+                                mime="application/json",
+                                use_container_width=True
+                            )
+                
+                except ImportError as e:
+                    st.error(f"❌ Missing required libraries for PDF generation: {e}")
+                    st.info("💡 Please ensure reportlab is installed: `pip install reportlab`")
+                
+                except Exception as e:
+                    st.error(f"❌ Error generating enhanced PDF report: {str(e)}")
+                    st.code(traceback.format_exc())
+                    
+                    # Show detailed error information
+                    st.subheader("🔍 Debug Information")
+                    st.write("**Analysis Mode:**", analysis_mode_for_pdf)
+                    st.write("**Has Results:**", bool(current_analysis_results))
+                    st.write("**Has Specs:**", bool(current_server_specs_for_pdf))
+                    st.write("**Has AI Insights:**", bool(st.session_state.ai_insights))
+                    st.write("**Has Transfer Results:**", bool(hasattr(st.session_state, 'transfer_results') and st.session_state.transfer_results))
+    
     else:
-        st.warning("Please run an analysis first (Single or Bulk) before generating the PDF report.")
+        st.warning("⚠️ Please run an analysis first (Single or Bulk) before generating the PDF report.")
+        
+        # Show what's needed
+        st.subheader("📋 Prerequisites for PDF Generation")
+        st.write("1. Configure migration settings in **Migration Planning** tab")
+        st.write("2. Set up server specifications in **Server Specifications** tab")
+        st.write("3. Run analysis in **Sizing Analysis** tab")
+        st.write("4. Optionally generate AI insights and transfer analysis")
+        st.write("5. Return to this tab to generate comprehensive PDF report")
 
-    st.header("📋 Export & Reporting")
+    # Rest of the reports tab code continues here...
+    # (Keep the existing bulk report generation and export options)
     
     # Bulk Report Generation (Chunked)
     if st.session_state.current_analysis_mode == 'bulk' and st.session_state.on_prem_servers:
