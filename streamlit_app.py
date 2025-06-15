@@ -1579,6 +1579,10 @@ with tab1:
 # TAB 2: SERVER SPECIFICATIONS
 # ================================
 
+# ================================
+# TAB 2: SERVER SPECIFICATIONS (CORRECTED)
+# ================================
+
 with tab2:
     st.header("🖥️ On-Premises Server Specifications")
     
@@ -1597,104 +1601,393 @@ with tab2:
         
         if st.session_state.current_analysis_mode == 'single':
             # Single Server Specifications
-            # Replace the section starting around line 1590 in TAB 2
-# Single Server Specifications
             st.subheader("🖥️ Single Server Configuration")
 
-    with st.expander("📋 Server Information", expanded=True):
-        col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        manual_server_name = st.text_input("Server Name/Hostname", value="PROD-DB-01", key="manual_server_name_input")
-        manual_cores = st.number_input("CPU Cores", min_value=1, max_value=128, value=8, key="manual_cores_input")
-        manual_ram = st.number_input("RAM (GB)", min_value=1, max_value=1024, value=32, key="manual_ram_input")
-    
-    with col2:
-        manual_storage = st.number_input("Storage (GB)", min_value=10, value=250, key="manual_storage_input")
-        manual_cpu_util = st.number_input("Peak CPU (%)", min_value=1, max_value=100, value=70, key="manual_cpu_util_input")
-        manual_ram_util = st.number_input("Peak RAM (%)", min_value=1, max_value=100, value=75, key="manual_ram_util_input")
-    
-    with col3:
-        manual_iops = st.number_input("Max IOPS", min_value=100, value=2500, key="manual_iops_input")
-        manual_throughput = st.number_input("Max Throughput (MB/s)", min_value=10, value=125, key="manual_throughput_input")
-        manual_engine = st.selectbox("Database Engine", ["oracle-ee", "oracle-se", "mysql", "postgres"], key="manual_engine_select")
-    
-    if st.button("➕ Add Server to Bulk List", use_container_width=True):
-        if manual_server_name:
-            new_server = {
-                'server_name': manual_server_name,
-                'cpu_cores': manual_cores,
-                'ram_gb': manual_ram,
-                'storage_gb': manual_storage,
-                'peak_cpu_percent': manual_cpu_util,
-                'peak_ram_percent': manual_ram_util,
-                'max_iops': manual_iops,
-                'max_throughput_mbps': manual_throughput,
-                'database_engine': manual_engine
-            }
+            with st.expander("📋 Server Information", expanded=True):
+                col1, col2, col3 = st.columns(3)
             
-            if 'on_prem_servers' not in st.session_state:
-                st.session_state.on_prem_servers = []
-            
-            st.session_state.on_prem_servers.append(new_server)
-            st.success(f"✅ Added {manual_server_name} to bulk analysis list")
-            st.rerun()
-        else:
-            st.error("Please provide a server name")
-    
-    # Add single server analysis button
-    if st.button("🔍 Analyze This Server (Single Mode)", type="primary", use_container_width=True):
-        if manual_server_name and manual_cores and manual_ram:
-            # Store current server spec for single analysis
-            st.session_state.current_server_spec = {
-                'server_name': manual_server_name,
-                'cores': manual_cores,
-                'cpu_ghz': 2.4,  # Default value
-                'ram': manual_ram,
-                'ram_type': 'DDR4',  # Default value
-                'storage': manual_storage,
-                'storage_type': 'SSD',  # Default value
-                'cpu_util': manual_cpu_util,
-                'ram_util': manual_ram_util,
-                'max_iops': manual_iops,
-                'max_throughput_mbps': manual_throughput,
-                'max_connections': 500,  # Default value
-                'growth_rate': 20,  # Default 20% growth
-                'years': 3,  # Default 3 years
-                'enable_encryption': True,
-                'enable_perf_insights': True,
-                'enable_enhanced_monitoring': False,
-                'monthly_transfer_gb': 100  # Default value
-            }
-            st.success(f"✅ Server {manual_server_name} configured for single analysis")
-            st.info("👉 Go to the 'Sizing Analysis' tab to generate recommendations")
-        else:
-            st.error("Please provide server name, CPU cores, and RAM")
-            
-            if st.session_state.on_prem_servers:
-                st.subheader(f"📊 Current Bulk Analysis List ({len(st.session_state.on_prem_servers)} servers)")
-                
-                bulk_df = pd.DataFrame(st.session_state.on_prem_servers)
-                st.dataframe(bulk_df, use_container_width=True)
-                
-                col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("🗑️ Clear Bulk List", use_container_width=True):
-                        st.session_state.on_prem_servers = []
-                        st.session_state.bulk_upload_data = None
-                        st.success("✅ Bulk server list cleared")
-                        st.rerun()
+                    manual_server_name = st.text_input("Server Name/Hostname", value="PROD-DB-01", key="manual_server_name_input")
+                    manual_cores = st.number_input("CPU Cores", min_value=1, max_value=128, value=8, key="manual_cores_input")
+                    manual_ram = st.number_input("RAM (GB)", min_value=1, max_value=1024, value=32, key="manual_ram_input")
                 
                 with col2:
-                    export_csv = bulk_df.to_csv(index=False)
+                    manual_storage = st.number_input("Storage (GB)", min_value=10, value=250, key="manual_storage_input")
+                    manual_cpu_util = st.number_input("Peak CPU (%)", min_value=1, max_value=100, value=70, key="manual_cpu_util_input")
+                    manual_ram_util = st.number_input("Peak RAM (%)", min_value=1, max_value=100, value=75, key="manual_ram_util_input")
+                
+                with col3:
+                    manual_iops = st.number_input("Max IOPS", min_value=100, value=2500, key="manual_iops_input")
+                    manual_throughput = st.number_input("Max Throughput (MB/s)", min_value=10, value=125, key="manual_throughput_input")
+                    manual_engine = st.selectbox("Database Engine", ["oracle-ee", "oracle-se", "mysql", "postgres"], key="manual_engine_select")
+            
+            # Add to bulk list button
+            if st.button("➕ Add Server to Bulk List", use_container_width=True):
+                if manual_server_name:
+                    new_server = {
+                        'server_name': manual_server_name,
+                        'cpu_cores': manual_cores,
+                        'ram_gb': manual_ram,
+                        'storage_gb': manual_storage,
+                        'peak_cpu_percent': manual_cpu_util,
+                        'peak_ram_percent': manual_ram_util,
+                        'max_iops': manual_iops,
+                        'max_throughput_mbps': manual_throughput,
+                        'database_engine': manual_engine
+                    }
+                    
+                    if 'on_prem_servers' not in st.session_state:
+                        st.session_state.on_prem_servers = []
+                    
+                    st.session_state.on_prem_servers.append(new_server)
+                    st.success(f"✅ Added {manual_server_name} to bulk analysis list")
+                    st.rerun()
+                else:
+                    st.error("Please provide a server name")
+            
+            # Single server analysis button
+            if st.button("🔍 Analyze This Server (Single Mode)", type="primary", use_container_width=True):
+                if manual_server_name and manual_cores and manual_ram:
+                    # Store current server spec for single analysis
+                    st.session_state.current_server_spec = {
+                        'server_name': manual_server_name,
+                        'cores': manual_cores,
+                        'cpu_ghz': 2.4,  # Default value
+                        'ram': manual_ram,
+                        'ram_type': 'DDR4',  # Default value
+                        'storage': manual_storage,
+                        'storage_type': 'SSD',  # Default value
+                        'cpu_util': manual_cpu_util,
+                        'ram_util': manual_ram_util,
+                        'max_iops': manual_iops,
+                        'max_throughput_mbps': manual_throughput,
+                        'max_connections': 500,  # Default value
+                        'growth_rate': 20,  # Default 20% growth
+                        'years': 3,  # Default 3 years
+                        'enable_encryption': True,
+                        'enable_perf_insights': True,
+                        'enable_enhanced_monitoring': False,
+                        'monthly_transfer_gb': 100  # Default value
+                    }
+                    st.success(f"✅ Server {manual_server_name} configured for single analysis")
+                    st.info("👉 Go to the 'Sizing Analysis' tab to generate recommendations")
+                else:
+                    st.error("Please provide server name, CPU cores, and RAM")
+        
+        else:
+            # BULK SERVER ANALYSIS MODE
+            st.subheader("📊 Bulk Server Analysis")
+            
+            # Bulk upload options
+            st.markdown("### 📁 Upload Server Specifications")
+            
+            upload_method = st.radio(
+                "Choose Upload Method",
+                ["📄 Upload CSV/Excel File", "✍️ Manual Entry"],
+                horizontal=True,
+                key="bulk_upload_method"
+            )
+            
+            if upload_method == "📄 Upload CSV/Excel File":
+                # File Upload Section
+                st.markdown("""
+                <div class="bulk-upload-zone">
+                    <h4>📂 Upload Server Specifications File</h4>
+                    <p>Upload a CSV or Excel file containing your server specifications</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Show required columns
+                with st.expander("📋 Required File Format", expanded=False):
+                    st.markdown("""
+                    **Required Columns:**
+                    - `server_name` - Server hostname or identifier
+                    - `cpu_cores` - Number of CPU cores
+                    - `ram_gb` - RAM in GB
+                    - `storage_gb` - Storage in GB
+                    
+                    **Optional Columns:**
+                    - `peak_cpu_percent` - Peak CPU utilization (default: 75%)
+                    - `peak_ram_percent` - Peak RAM utilization (default: 80%)
+                    - `max_iops` - Maximum IOPS (default: 1000)
+                    - `max_throughput_mbps` - Maximum throughput in MB/s (default: 125)
+                    - `database_engine` - Database engine (default: oracle-ee)
+                    """)
+                    
+                    # Sample data download
+                    sample_data = pd.DataFrame([
+                        {
+                            'server_name': 'PROD-DB-01',
+                            'cpu_cores': 8,
+                            'ram_gb': 32,
+                            'storage_gb': 500,
+                            'peak_cpu_percent': 75,
+                            'peak_ram_percent': 80,
+                            'max_iops': 2500,
+                            'max_throughput_mbps': 125,
+                            'database_engine': 'oracle-ee'
+                        },
+                        {
+                            'server_name': 'TEST-DB-01',
+                            'cpu_cores': 4,
+                            'ram_gb': 16,
+                            'storage_gb': 250,
+                            'peak_cpu_percent': 60,
+                            'peak_ram_percent': 70,
+                            'max_iops': 1500,
+                            'max_throughput_mbps': 100,
+                            'database_engine': 'mysql'
+                        },
+                        {
+                            'server_name': 'DEV-DB-01',
+                            'cpu_cores': 2,
+                            'ram_gb': 8,
+                            'storage_gb': 100,
+                            'peak_cpu_percent': 50,
+                            'peak_ram_percent': 60,
+                            'max_iops': 1000,
+                            'max_throughput_mbps': 75,
+                            'database_engine': 'postgres'
+                        }
+                    ])
+                    
+                    sample_csv = sample_data.to_csv(index=False)
                     st.download_button(
-                        label="📥 Export Current List",
-                        data=export_csv,
-                        file_name=f"bulk_servers_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        label="📥 Download Sample CSV Template",
+                        data=sample_csv,
+                        file_name="server_specs_template.csv",
                         mime="text/csv",
-                        use_container_width=True
+                        help="Download this template and fill in your server data"
                     )
-
+                
+                # File uploader
+                uploaded_file = st.file_uploader(
+                    "Choose CSV or Excel file",
+                    type=['csv', 'xlsx', 'xls'],
+                    help="Upload a file containing your server specifications",
+                    key="bulk_upload_file"
+                )
+                
+                if uploaded_file is not None:
+                    with st.spinner("📖 Parsing uploaded file..."):
+                        try:
+                            parsed_servers = parse_bulk_upload_file(uploaded_file)
+                            
+                            if parsed_servers:
+                                st.session_state.bulk_upload_data = parsed_servers
+                                st.session_state.on_prem_servers = parsed_servers
+                                
+                                st.success(f"✅ Successfully parsed {len(parsed_servers)} servers from {uploaded_file.name}")
+                                
+                                # Show preview of uploaded data
+                                st.subheader("📊 Uploaded Server Data Preview")
+                                preview_df = pd.DataFrame(parsed_servers)
+                                st.dataframe(preview_df, use_container_width=True)
+                                
+                                # Data validation summary
+                                col1, col2, col3, col4 = st.columns(4)
+                                
+                                with col1:
+                                    total_cores = sum([server['cpu_cores'] for server in parsed_servers])
+                                    st.metric("Total CPU Cores", total_cores)
+                                
+                                with col2:
+                                    total_ram = sum([server['ram_gb'] for server in parsed_servers])
+                                    st.metric("Total RAM (GB)", total_ram)
+                                
+                                with col3:
+                                    total_storage = sum([server['storage_gb'] for server in parsed_servers])
+                                    st.metric("Total Storage (GB)", f"{total_storage:,}")
+                                
+                                with col4:
+                                    unique_engines = len(set([server['database_engine'] for server in parsed_servers]))
+                                    st.metric("DB Engine Types", unique_engines)
+                                
+                            else:
+                                st.error("❌ Failed to parse the uploaded file. Please check the format and try again.")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Error processing file: {str(e)}")
+                            st.info("💡 Please ensure your file matches the required format.")
+            
+            else:
+                # Manual Entry for Bulk
+                st.markdown("### ✍️ Manual Server Entry")
+                
+                with st.form("manual_bulk_entry"):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        bulk_server_name = st.text_input("Server Name", placeholder="e.g., PROD-DB-02")
+                        bulk_cores = st.number_input("CPU Cores", min_value=1, max_value=128, value=4)
+                        bulk_ram = st.number_input("RAM (GB)", min_value=1, max_value=1024, value=16)
+                    
+                    with col2:
+                        bulk_storage = st.number_input("Storage (GB)", min_value=10, value=250)
+                        bulk_cpu_util = st.number_input("Peak CPU (%)", min_value=1, max_value=100, value=70)
+                        bulk_ram_util = st.number_input("Peak RAM (%)", min_value=1, max_value=100, value=75)
+                    
+                    with col3:
+                        bulk_iops = st.number_input("Max IOPS", min_value=100, value=1500)
+                        bulk_throughput = st.number_input("Max Throughput (MB/s)", min_value=10, value=100)
+                        bulk_engine = st.selectbox("Database Engine", 
+                                                   ["oracle-ee", "oracle-se", "mysql", "postgres", "sqlserver-ee"], 
+                                                   index=0)
+                    
+                    submitted = st.form_submit_button("➕ Add Server to Bulk List", use_container_width=True)
+                    
+                    if submitted:
+                        if bulk_server_name:
+                            new_server = {
+                                'server_name': bulk_server_name,
+                                'cpu_cores': bulk_cores,
+                                'ram_gb': bulk_ram,
+                                'storage_gb': bulk_storage,
+                                'peak_cpu_percent': bulk_cpu_util,
+                                'peak_ram_percent': bulk_ram_util,
+                                'max_iops': bulk_iops,
+                                'max_throughput_mbps': bulk_throughput,
+                                'database_engine': bulk_engine
+                            }
+                            
+                            if 'on_prem_servers' not in st.session_state:
+                                st.session_state.on_prem_servers = []
+                            
+                            # Check for duplicate server names
+                            existing_names = [s['server_name'] for s in st.session_state.on_prem_servers]
+                            if bulk_server_name in existing_names:
+                                st.error(f"❌ Server name '{bulk_server_name}' already exists. Please use a unique name.")
+                            else:
+                                st.session_state.on_prem_servers.append(new_server)
+                                st.success(f"✅ Added {bulk_server_name} to bulk analysis list")
+                                st.rerun()
+                        else:
+                            st.error("❌ Please provide a server name")
+        
+        # Display current server list (for both modes)
+        if st.session_state.on_prem_servers:
+            st.subheader(f"📊 Current Server List ({len(st.session_state.on_prem_servers)} servers)")
+            
+            # Create DataFrame for display
+            display_df = pd.DataFrame(st.session_state.on_prem_servers)
+            
+            # Add edit capabilities
+            edited_df = st.data_editor(
+                display_df,
+                use_container_width=True,
+                num_rows="dynamic",
+                key="server_list_editor",
+                column_config={
+                    "server_name": st.column_config.TextColumn("Server Name", required=True),
+                    "cpu_cores": st.column_config.NumberColumn("CPU Cores", min_value=1, max_value=128),
+                    "ram_gb": st.column_config.NumberColumn("RAM (GB)", min_value=1, max_value=1024),
+                    "storage_gb": st.column_config.NumberColumn("Storage (GB)", min_value=10),
+                    "peak_cpu_percent": st.column_config.NumberColumn("Peak CPU %", min_value=1, max_value=100),
+                    "peak_ram_percent": st.column_config.NumberColumn("Peak RAM %", min_value=1, max_value=100),
+                    "max_iops": st.column_config.NumberColumn("Max IOPS", min_value=100),
+                    "max_throughput_mbps": st.column_config.NumberColumn("Throughput MB/s", min_value=10),
+                    "database_engine": st.column_config.SelectboxColumn("DB Engine", 
+                                                                        options=["oracle-ee", "oracle-se", "mysql", "postgres", "sqlserver-ee"])
+                }
+            )
+            
+            # Update session state with edited data
+            if not edited_df.equals(display_df):
+                st.session_state.on_prem_servers = edited_df.to_dict('records')
+                st.success("✅ Server list updated!")
+            
+            # Server list management
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if st.button("🗑️ Clear All Servers", use_container_width=True):
+                    st.session_state.on_prem_servers = []
+                    st.session_state.bulk_upload_data = None
+                    st.session_state.bulk_results = {}
+                    st.success("✅ All servers cleared")
+                    st.rerun()
+            
+            with col2:
+                # Export current list
+                current_csv = pd.DataFrame(st.session_state.on_prem_servers).to_csv(index=False)
+                st.download_button(
+                    label="📥 Export Server List",
+                    data=current_csv,
+                    file_name=f"server_list_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            
+            with col3:
+                if st.button("🔄 Validate All Servers", use_container_width=True):
+                    validation_errors = []
+                    for i, server in enumerate(st.session_state.on_prem_servers):
+                        if not server.get('server_name'):
+                            validation_errors.append(f"Row {i+1}: Missing server name")
+                        if server.get('cpu_cores', 0) <= 0:
+                            validation_errors.append(f"Row {i+1}: Invalid CPU cores")
+                        if server.get('ram_gb', 0) <= 0:
+                            validation_errors.append(f"Row {i+1}: Invalid RAM")
+                        if server.get('storage_gb', 0) <= 0:
+                            validation_errors.append(f"Row {i+1}: Invalid storage")
+                    
+                    if validation_errors:
+                        st.error(f"❌ Validation errors found:")
+                        for error in validation_errors:
+                            st.write(f"• {error}")
+                    else:
+                        st.success("✅ All servers validated successfully!")
+            
+            with col4:
+                # Show summary stats
+                if st.button("📊 Show Summary", use_container_width=True):
+                    st.session_state.show_summary = not st.session_state.get('show_summary', False)
+            
+            # Summary statistics
+            if st.session_state.get('show_summary', False):
+                st.subheader("📈 Server List Summary")
+                
+                total_cores = sum([server['cpu_cores'] for server in st.session_state.on_prem_servers])
+                total_ram = sum([server['ram_gb'] for server in st.session_state.on_prem_servers])
+                total_storage = sum([server['storage_gb'] for server in st.session_state.on_prem_servers])
+                avg_cpu_util = sum([server['peak_cpu_percent'] for server in st.session_state.on_prem_servers]) / len(st.session_state.on_prem_servers)
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total CPU Cores", total_cores)
+                
+                with col2:
+                    st.metric("Total RAM (GB)", f"{total_ram:,}")
+                
+                with col3:
+                    st.metric("Total Storage (GB)", f"{total_storage:,}")
+                
+                with col4:
+                    st.metric("Avg CPU Utilization", f"{avg_cpu_util:.1f}%")
+                
+                # Engine distribution
+                engine_counts = {}
+                for server in st.session_state.on_prem_servers:
+                    engine = server['database_engine']
+                    engine_counts[engine] = engine_counts.get(engine, 0) + 1
+                
+                st.markdown("**Database Engine Distribution:**")
+                for engine, count in engine_counts.items():
+                    st.write(f"• {engine}: {count} servers")
+        
+        else:
+            # No servers configured yet
+            st.info("💡 No servers configured yet. Use the options above to add server specifications.")
+            
+            if st.session_state.current_analysis_mode == 'bulk':
+                st.markdown("""
+                **Getting Started with Bulk Analysis:**
+                1. 📄 Upload a CSV/Excel file with your server specifications, OR
+                2. ✍️ Manually enter each server using the form above
+                3. 📊 Review and validate your server list
+                4. 🚀 Proceed to the Sizing Analysis tab to run bulk analysis
+                """)
 # ================================
 # TAB 3: SIZING ANALYSIS
 # ================================
