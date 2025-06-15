@@ -16,7 +16,7 @@ from io import BytesIO
 import tempfile
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
-from data_transfer_calculator import DataTransferCalculator, TransferMethod, TransferMethodResult # Added TransferMethodResult
+from data_transfer_calculator import DataTransferCalculator, TransferMethod, TransferMethodResult # Corrected import
 import io
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
@@ -1709,7 +1709,8 @@ if 'bulk_results' not in st.session_state or not st.session_state.bulk_results:
     
     # Also inject a dummy transfer result for mock data if none exists
     if not st.session_state.transfer_results:
-        from data_transfer_calculator import TransferMethodResult # Ensure this is accessible if not already
+        # Import TransferMethodResult here if not imported globally at top, or ensure it's available.
+        # It's now imported globally at the top.
         st.session_state.transfer_results = {
             'datasync_dx': TransferMethodResult(
                 recommended_method='AWS DataSync (Direct Connect)',
@@ -2947,7 +2948,7 @@ with tab4:
     else:
         if st.session_state.current_analysis_mode == 'single':
             results = current_results
-            valid_results = {k: v for k, v in results.items() if 'error' not in v} # Corrected syntax here
+            valid_results = {k: v for k, v in results.items() if 'error' not in v}
             
             if valid_results:
                 st.subheader(f"📊 {analysis_title} Financial Summary")
@@ -3130,7 +3131,7 @@ with tab4:
         
         # Compare transfer costs with infrastructure costs
         if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
-            valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v} # Corrected syntax here
+            valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v}
             if valid_results:
                 prod_result = valid_results.get('PROD', list(valid_results.values())[0])
                 monthly_infrastructure_cost = safe_get(prod_result, 'total_cost', 0)
@@ -3710,4 +3711,5 @@ st.markdown("""
     <p>AI-Powered Database Migration Analysis • Built for Enterprise Scale</p>
     <p>💡 For support and advanced features, contact your AWS solutions architect</p>
 </div>
+
 """, unsafe_allow_html=True)
