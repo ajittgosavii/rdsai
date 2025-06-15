@@ -2697,16 +2697,16 @@ with tab2:
                         st.error("❌ Calculator not initialized. Please configure migration settings first.")
                         st.stop()
                     
-                    progress_bar = st.progress(0)
-                    status_placeholder = st.empty()
-                    results_placeholder = st.empty()
-                    
-                    bulk_results = {}
-                    servers = st.session_state.on_prem_servers  # <-- ADD THIS LINE
-                    total_servers = len(servers)
-                    
-                    # Initialize total_monthly_cost for AI insights calculation
-                    total_monthly_cost_for_ai_insights = 0 
+                        progress_bar = st.progress(0)
+                        status_placeholder = st.empty()
+                        results_placeholder = st.empty()
+                        
+                        bulk_results = {}
+                        servers = st.session_state.on_prem_servers  # <-- ADD THIS LINE
+                        total_servers = len(servers)
+                        
+                        # Initialize total_monthly_cost for AI insights calculation
+                        total_monthly_cost_for_ai_insights = 0 
 
                     try:
                         for i, server in enumerate(servers):
