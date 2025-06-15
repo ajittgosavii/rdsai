@@ -1480,7 +1480,7 @@ class EnhancedReportGenerator:
                             "on_prem_cores": server['cpu_cores'],
                             "peak_cpu_percent": server['peak_cpu_percent'],
                             "on_prem_ram_gb": server['ram_gb'],
-                            "peak_ram_percent": server['peak_ram_percent'],
+                            "peak_ram_percent": server['ram_percent'],
                             "storage_current_gb": server['storage_gb'],
                             "storage_growth_rate": 0.2,
                             "years": 3,
@@ -2102,7 +2102,7 @@ with tab2:
                     if servers:
                         st.session_state.bulk_upload_data = servers
                         
-                        st.success(f"✅ Successfully loaded {len(servers)} servers")
+                        st.success(f"✅ Successfully loaded {len(servers)} servers.")
                         
                         col1, col2, col3, col4 = st.columns(4)
                         
@@ -2215,11 +2215,11 @@ with tab3:
             st.markdown(f"""
             <div class="server-summary-card">
                 <h4>🔍 Analyzing: {server_spec['server_name']}</h4>
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
-                    <div><strong>CPU:</strong> {server_spec['cores']} cores</div>
-                    <div><strong>RAM:</strong> {server_spec['ram']}GB</div>
-                    <div><strong>Storage:</strong> {server_spec['storage']}GB</div>
-                    <div><strong>IOPS:</strong> {server_spec['max_iops']:,}</div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem;">
+                    <div><strong>CPU:</strong> {server_spec['cores']} cores @ {server_spec['cpu_ghz']}GHz</div>
+                    <div><strong>RAM:</strong> {server_spec['ram']}GB {server_spec['ram_type']}</div>
+                    <div><strong>Storage:</strong> {server_spec['storage']}GB {server_spec['storage_type']}</div>
+                    <div><strong>IOPS:</strong> {server_spec['max_iops']:,} peak</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -2738,7 +2738,7 @@ with tab3:
                     
                     if time_savings > 24 and cost_difference < internet_result.total_cost * 0.5:  # Saves >1 day, <50% cost increase
                         recommendation = "✅ **Recommended: DataSync over Direct Connect**"
-                        reasoning = f"Saves {time_savings/24:.1f} days for only ${cost_difference:.0f} additional cost"
+                        reasoning = f"Saves {time_savings/24:.1f} days for only ${abs(cost_difference):.0f} additional cost"
                     elif cost_difference < 0:  # DX is actually cheaper
                         recommendation = "✅ **Recommended: DataSync over Direct Connect**"
                         reasoning = "Faster AND cheaper than internet transfer"
@@ -2947,7 +2947,7 @@ with tab4:
     else:
         if st.session_state.current_analysis_mode == 'single':
             results = current_results
-            valid_results = {k: v for k, v in results.items() if 'error' not in v}
+            valid_results = {k: v for k, v in results.items() if 'error' not in v} # Corrected syntax here
             
             if valid_results:
                 st.subheader(f"📊 {analysis_title} Financial Summary")
@@ -3130,7 +3130,7 @@ with tab4:
         
         # Compare transfer costs with infrastructure costs
         if st.session_state.current_analysis_mode == 'single' and st.session_state.results:
-            valid_results = {k: v for k: v in st.session_state.results.items() if 'error' not in v}
+            valid_results = {k: v for k, v in st.session_state.results.items() if 'error' not in v} # Corrected syntax here
             if valid_results:
                 prod_result = valid_results.get('PROD', list(valid_results.values())[0])
                 monthly_infrastructure_cost = safe_get(prod_result, 'total_cost', 0)
@@ -3352,8 +3352,8 @@ with tab6:
                         for chunk in processed_results_chunks:
                             for server_result_dict in chunk:
                                 if 'error' not in server_result_dict:
-                                    server_name = next(iter(server_result_dict.keys())) # Get server name assuming it's the key
-                                    all_results_flattened[server_name] = server_result_dict[server_name]
+                                    # The server_result_dict itself is the result for one server, structured as {server_name: {PROD: ...}}
+                                    all_results_flattened.update(server_result_dict)
                                 else:
                                     # Handle errors from chunked processing if needed
                                     st.warning(f"Error in chunked processing for a server: {server_result_dict.get('error', 'Unknown error')}")
