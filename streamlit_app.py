@@ -2373,254 +2373,573 @@ with tab2:
 # This should go in the "else" block for bulk analysis mode
 
 # Bulk Server Analysis
+            # BULK SERVER ANALYSIS MODE
             st.subheader("📊 Bulk Server Analysis")
-
-            servers = st.session_state.on_prem_servers
-            st.info(f"📋 Ready to analyze {len(servers)} servers")
-
-with st.expander("⚙️ Bulk Analysis Settings"):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        batch_size = st.number_input("Batch Size", min_value=1, max_value=10, value=3, help="Number of servers to process simultaneously")
-        include_dev_environments = st.checkbox("Include DEV/TEST environments", value=False)
-    
-    with col2:
-        export_individual_reports = st.checkbox("Export individual server reports", value=False)
-        enable_parallel_processing = st.checkbox("Enable parallel processing", value=True)
-
-# Make sure this button and ALL its contents are properly indented
-if st.button("🚀 Start Bulk Analysis", type="primary", use_container_width=True):
-    progress_bar = st.progress(0)
-    status_placeholder = st.empty()
-    results_placeholder = st.empty()
-    
-    bulk_results = {}
-    total_servers = len(servers)  # Now this is INSIDE the button click
-    
-    # Initialize total_monthly_cost for AI insights calculation
-    total_monthly_cost_for_ai_insights = 0 
-
-    try:
-        for i, server in enumerate(servers):
-            # Update status for current server being analyzed
-            status_placeholder.text(f"🔄 Analyzing {server['server_name']} ({i+1}/{total_servers})")
             
-            try:
-                inputs = {
-                    "region": st.session_state.region,
-                    "target_engine": st.session_state.target_engine,
-                    "source_engine": server.get('database_engine', st.session_state.source_engine),
-                    "deployment": st.session_state.deployment_option,
-                    "storage_type": st.session_state.storage_type,
-                    "on_prem_cores": server['cpu_cores'],
-                    "peak_cpu_percent": server['peak_cpu_percent'],
-                    "on_prem_ram_gb": server['ram_gb'],
-                    "peak_ram_percent": server['peak_ram_percent'],
-                    "storage_current_gb": server['storage_gb'],
-                    "storage_growth_rate": 0.2,
-                    "years": 3,
-                    "enable_encryption": True,
-                    "enable_perf_insights": True,
-                    "enable_enhanced_monitoring": False,
-                    "monthly_data_transfer_gb": 100,
-                    "max_iops": server['max_iops'],
-                    "max_throughput_mbps": server['max_throughput_mbps']
-                }
-                
-                server_results = st.session_state.calculator.generate_comprehensive_recommendations(inputs)
-                bulk_results[server['server_name']] = server_results
-                
-                # Accumulate cost for AI insights, only from successful analyses
-                if 'error' not in server_results:
-                    prod_result = server_results.get('PROD', list(server_results.values())[0])
-                    if 'error' not in prod_result:
-                        total_monthly_cost_for_ai_insights += safe_get(prod_result, 'total_cost', 0)
-
-                # Show success status
-                status_placeholder.success(f"✅ Completed {server['server_name']} ({i+1}/{total_servers})")
-
-            except Exception as e:
-                bulk_results[server['server_name']] = {'error': str(e)}
-                st.warning(f"⚠️ Error analyzing {server['server_name']}: {e}")
-                status_placeholder.error(f"❌ Failed {server['server_name']} ({i+1}/{total_servers})")
+            # Bulk upload options
+            st.markdown("### 📁 Upload Server Specifications")
             
-            # Update progress bar
-            progress_bar.progress((i + 1) / total_servers)
+            upload_method = st.radio(
+                "Choose Upload Method",
+                ["📄 Upload CSV/Excel File", "✍️ Manual Entry"],
+                horizontal=True,
+                key="bulk_upload_method"
+            )
             
-            # Update results summary - FIXED: Show progress on every server instead of every 3rd
-            with results_placeholder.container():
-                completed_count = i + 1
-                successful_count = len([r for r in bulk_results.values() if 'error' not in r])
-                failed_count = completed_count - successful_count
+            if upload_method == "📄 Upload CSV/Excel File":
+                # File Upload Section
+                st.markdown("""
+                <div class="bulk-upload-zone">
+                    <h4>📂 Upload Server Specifications File</h4>
+                    <p>Upload a CSV or Excel file containing your server specifications</p>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Completed", f"{completed_count}/{total_servers}")
-                with col2:
-                    st.metric("Successful", successful_count)
-                with col3:
-                    st.metric("Failed", failed_count)
-                
-                # Show current progress percentage
-                progress_pct = (completed_count / total_servers) * 100
-                st.progress(progress_pct / 100, text=f"Overall Progress: {progress_pct:.1f}%")
-            
-            # Small delay to make progress visible
-            time.sleep(0.5)
-        
-        st.session_state.bulk_results = bulk_results
-        
-        successful_analyses = len([r for r in bulk_results.values() if 'error' not in r])
-        failed_analyses = total_servers - successful_analyses
-        
-        progress_bar.progress(1.0)
-        status_placeholder.success(f"🎉 Bulk analysis complete! {successful_analyses} successful, {failed_analyses} failed")
-        
-        # Clear the intermediate results display
-        results_placeholder.empty()
-        
-        # --- AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
-        if successful_analyses > 0 and st.session_state.calculator.ai_client:
-            with st.spinner("🤖 Generating AI insights for bulk analysis..."):
-                try:
-                    # Aggregate all successful results for AI analysis
-                    aggregated_results_for_ai = {}
-                    for server_name, server_data in bulk_results.items():
-                        if 'error' not in server_data:
-                            # Get the PROD environment result, or first available result
-                            if 'PROD' in server_data:
-                                aggregated_results_for_ai[server_name] = server_data['PROD']
-                            else:
-                                # Get first non-error result
-                                for env_key, env_result in server_data.items():
-                                    if 'error' not in env_result:
-                                        aggregated_results_for_ai[server_name] = env_result
-                                        break
-
-                    # Create input for the overall bulk AI insight
-                    bulk_inputs_for_ai = {
-                        "region": st.session_state.region,
-                        "target_engine": st.session_state.target_engine,
-                        "source_engine": st.session_state.source_engine,
-                        "deployment": st.session_state.deployment_option,
-                        "storage_type": st.session_state.storage_type,
-                        "num_servers_analyzed": successful_analyses,
-                        "total_monthly_cost": total_monthly_cost_for_ai_insights,
-                        "analysis_mode": "bulk",
-                        "servers_summary": {
-                            "total_servers": len(st.session_state.on_prem_servers),
-                            "successful_analyses": successful_analyses,
-                            "failed_analyses": len(st.session_state.on_prem_servers) - successful_analyses
+                # Show required columns
+                with st.expander("📋 Required File Format", expanded=False):
+                    st.markdown("""
+                    **Required Columns:**
+                    - `server_name` - Server hostname or identifier
+                    - `cpu_cores` - Number of CPU cores
+                    - `ram_gb` - RAM in GB
+                    - `storage_gb` - Storage in GB
+                    
+                    **Optional Columns:**
+                    - `peak_cpu_percent` - Peak CPU utilization (default: 75%)
+                    - `peak_ram_percent` - Peak RAM utilization (default: 80%)
+                    - `max_iops` - Maximum IOPS (default: 1000)
+                    - `max_throughput_mbps` - Maximum throughput in MB/s (default: 125)
+                    - `database_engine` - Database engine (default: oracle-ee)
+                    """)
+                    
+                    # Sample data download
+                    sample_data = pd.DataFrame([
+                        {
+                            'server_name': 'PROD-DB-01',
+                            'cpu_cores': 8,
+                            'ram_gb': 32,
+                            'storage_gb': 500,
+                            'peak_cpu_percent': 75,
+                            'peak_ram_percent': 80,
+                            'max_iops': 2500,
+                            'max_throughput_mbps': 125,
+                            'database_engine': 'oracle-ee'
+                        },
+                        {
+                            'server_name': 'TEST-DB-01',
+                            'cpu_cores': 4,
+                            'ram_gb': 16,
+                            'storage_gb': 250,
+                            'peak_cpu_percent': 60,
+                            'peak_ram_percent': 70,
+                            'max_iops': 1500,
+                            'max_throughput_mbps': 100,
+                            'database_engine': 'mysql'
+                        },
+                        {
+                            'server_name': 'DEV-DB-01',
+                            'cpu_cores': 2,
+                            'ram_gb': 8,
+                            'storage_gb': 100,
+                            'peak_cpu_percent': 50,
+                            'peak_ram_percent': 60,
+                            'max_iops': 1000,
+                            'max_throughput_mbps': 75,
+                            'database_engine': 'postgres'
                         }
-                    }
-
-                    # Calculate averages safely
-                    if successful_analyses > 0:
-                        total_vcpus = 0
-                        total_ram = 0
-                        total_storage = 0
-                        
-                        for server_result in aggregated_results_for_ai.values():
-                            if 'writer' in server_result:
-                                total_vcpus += safe_get(server_result['writer'], 'actual_vCPUs', 0)
-                                total_ram += safe_get(server_result['writer'], 'actual_RAM_GB', 0)
-                            else:
-                                total_vcpus += safe_get(server_result, 'actual_vCPUs', 0)
-                                total_ram += safe_get(server_result, 'actual_RAM_GB', 0)
+                    ])
+                    
+                    sample_csv = sample_data.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Sample CSV Template",
+                        data=sample_csv,
+                        file_name="server_specs_template.csv",
+                        mime="text/csv",
+                        help="Download this template and fill in your server data"
+                    )
+                
+                # File uploader
+                uploaded_file = st.file_uploader(
+                    "Choose CSV or Excel file",
+                    type=['csv', 'xlsx', 'xls'],
+                    help="Upload a file containing your server specifications",
+                    key="bulk_upload_file"
+                )
+                
+                if uploaded_file is not None:
+                    with st.spinner("📖 Parsing uploaded file..."):
+                        try:
+                            parsed_servers = parse_bulk_upload_file(uploaded_file)
                             
-                            total_storage += safe_get(server_result, 'storage_GB', 0)
-                        
-                        bulk_inputs_for_ai.update({
-                            "avg_cpu_cores": total_vcpus / successful_analyses,
-                            "avg_ram_gb": total_ram / successful_analyses,
-                            "avg_storage_gb": total_storage / successful_analyses
-                        })
-                    
-                    # Generate AI insights
-                    bulk_ai_insights = asyncio.run(st.session_state.calculator.generate_ai_insights(aggregated_results_for_ai, bulk_inputs_for_ai))
-                    st.session_state.ai_insights = bulk_ai_insights
-                    st.success("✅ AI insights for bulk analysis generated!")
-                    
-                except Exception as e:
-                    st.warning(f"AI insights generation for bulk failed: {e}")
-                    st.code(traceback.format_exc())
-                    st.session_state.ai_insights = None
-                    
-        elif successful_analyses == 0:
-            st.info("No successful server analyses found; skipping AI insights generation for bulk.")
-            st.session_state.ai_insights = None
-        elif not st.session_state.calculator.ai_client:
-            st.info("Anthropic API key not provided or AI client not ready; skipping AI insights generation.")
-            st.session_state.ai_insights = None
-
-        if successful_analyses > 0:
-            st.subheader("📊 Bulk Analysis Results") 
+                            if parsed_servers:
+                                st.session_state.bulk_upload_data = parsed_servers
+                                st.session_state.on_prem_servers = parsed_servers
+                                
+                                st.success(f"✅ Successfully parsed {len(parsed_servers)} servers from {uploaded_file.name}")
+                                
+                                # Show preview of uploaded data
+                                st.subheader("📊 Uploaded Server Data Preview")
+                                preview_df = pd.DataFrame(parsed_servers)
+                                st.dataframe(preview_df, use_container_width=True)
+                                
+                                # Data validation summary
+                                col1, col2, col3, col4 = st.columns(4)
+                                
+                                with col1:
+                                    total_cores = sum([server['cpu_cores'] for server in parsed_servers])
+                                    st.metric("Total CPU Cores", total_cores)
+                                
+                                with col2:
+                                    total_ram = sum([server['ram_gb'] for server in parsed_servers])
+                                    st.metric("Total RAM (GB)", total_ram)
+                                
+                                with col3:
+                                    total_storage = sum([server['storage_gb'] for server in parsed_servers])
+                                    st.metric("Total Storage (GB)", f"{total_storage:,}")
+                                
+                                with col4:
+                                    unique_engines = len(set([server['database_engine'] for server in parsed_servers]))
+                                    st.metric("DB Engine Types", unique_engines)
+                                
+                            else:
+                                st.error("❌ Failed to parse the uploaded file. Please check the format and try again.")
+                                
+                        except Exception as e:
+                            st.error(f"❌ Error processing file: {str(e)}")
+                            st.info("💡 Please ensure your file matches the required format.")
             
-            summary_fig = create_bulk_analysis_summary_chart(bulk_results)
-            if summary_fig:
-                st.plotly_chart(summary_fig, use_container_width=True)
-            
-            summary_data = []
-            total_monthly_cost_display = 0
-            
-            for server_name, results in bulk_results.items():
-                if 'error' not in results:
-                    result = results.get('PROD', list(results.values())[0])
-                    if 'error' not in result:
-                        monthly_cost = safe_get(result, 'total_cost', 0)
-                        total_monthly_cost_display += monthly_cost
-                        
-                        recommended_instance_type = ""
-                        vcpus_display = 0
-                        ram_gb_display = 0
-                        if 'writer' in result:
-                            writer_info = result['writer']
-                            recommended_instance_type = safe_get_str(writer_info, 'instance_type', 'N/A')
-                            vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
-                            ram_gb_display = safe_get(writer_info, 'actual_RAM_GB', 0)
-                            if result['readers']:
-                                recommended_instance_type += f" + {len(result['readers'])} Readers"
+            else:
+                # Manual Entry for Bulk
+                st.markdown("### ✍️ Manual Server Entry")
+                
+                with st.form("manual_bulk_entry"):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        bulk_server_name = st.text_input("Server Name", placeholder="e.g., PROD-DB-02")
+                        bulk_cores = st.number_input("CPU Cores", min_value=1, max_value=128, value=4)
+                        bulk_ram = st.number_input("RAM (GB)", min_value=1, max_value=1024, value=16)
+                    
+                    with col2:
+                        bulk_storage = st.number_input("Storage (GB)", min_value=10, value=250)
+                        bulk_cpu_util = st.number_input("Peak CPU (%)", min_value=1, max_value=100, value=70)
+                        bulk_ram_util = st.number_input("Peak RAM (%)", min_value=1, max_value=100, value=75)
+                    
+                    with col3:
+                        bulk_iops = st.number_input("Max IOPS", min_value=100, value=1500)
+                        bulk_throughput = st.number_input("Max Throughput (MB/s)", min_value=10, value=100)
+                        bulk_engine = st.selectbox("Database Engine", 
+                                                   ["oracle-ee", "oracle-se", "mysql", "postgres", "sqlserver-ee"], 
+                                                   index=0)
+                    
+                    submitted = st.form_submit_button("➕ Add Server to Bulk List", use_container_width=True)
+                    
+                    if submitted:
+                        if bulk_server_name:
+                            new_server = {
+                                'server_name': bulk_server_name,
+                                'cpu_cores': bulk_cores,
+                                'ram_gb': bulk_ram,
+                                'storage_gb': bulk_storage,
+                                'peak_cpu_percent': bulk_cpu_util,
+                                'peak_ram_percent': bulk_ram_util,
+                                'max_iops': bulk_iops,
+                                'max_throughput_mbps': bulk_throughput,
+                                'database_engine': bulk_engine
+                            }
+                            
+                            if 'on_prem_servers' not in st.session_state:
+                                st.session_state.on_prem_servers = []
+                            
+                            # Check for duplicate server names
+                            existing_names = [s['server_name'] for s in st.session_state.on_prem_servers]
+                            if bulk_server_name in existing_names:
+                                st.error(f"❌ Server name '{bulk_server_name}' already exists. Please use a unique name.")
+                            else:
+                                st.session_state.on_prem_servers.append(new_server)
+                                st.success(f"✅ Added {bulk_server_name} to bulk analysis list")
+                                st.rerun()
                         else:
-                            recommended_instance_type = safe_get_str(result, 'instance_type', 'N/A')
-                            vcpus_display = safe_get(result, 'actual_vCPUs', 0)
-                            ram_gb_display = safe_get(result, 'actual_RAM_GB', 0)
+                            st.error("❌ Please provide a server name")
 
-                        summary_data.append({
-                            'Server Name': server_name,
-                            'Recommended Instance': recommended_instance_type,
-                            'vCPUs': vcpus_display,
-                            'RAM (GB)': ram_gb_display,
-                            'Storage (GB)': safe_get(result, 'storage_GB', 0),
-                            'Monthly Cost': f"${monthly_cost:,.2f}",
-                            'Annual Cost': f"${monthly_cost * 12:,.2f}"
-                        })
-                else:
-                    summary_data.append({
-                        'Server Name': server_name,
-                        'Recommended Instance': 'ERROR',
-                        'vCPUs': 0,
-                        'RAM (GB)': 0,
-                        'Storage (GB)': 0,
-                        'Monthly Cost': '$0.00',
-                        'Annual Cost': f"Error: {results['error']}"
-                    })
-            
-            summary_df = pd.DataFrame(summary_data)
-            st.dataframe(summary_df, use_container_width=True)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Monthly Cost", f"${total_monthly_cost_display:,.2f}")
-            with col2:
-                st.metric("Total Annual Cost", f"${total_monthly_cost_display * 12:,.2f}")
-            with col3:
-                avg_cost = total_monthly_cost_display / successful_analyses if successful_analyses > 0 else 0
-                st.metric("Average Cost per Server", f"${avg_cost:,.2f}")
-        
-    except Exception as e:
-        st.error(f"❌ Bulk analysis failed: {str(e)}")
-        st.code(traceback.format_exc())
+            # Display current server list
+            if st.session_state.on_prem_servers:
+                st.subheader(f"📊 Current Server List ({len(st.session_state.on_prem_servers)} servers)")
+                
+                # Create DataFrame for display
+                display_df = pd.DataFrame(st.session_state.on_prem_servers)
+                
+                # Add edit capabilities
+                edited_df = st.data_editor(
+                    display_df,
+                    use_container_width=True,
+                    num_rows="dynamic",
+                    key="server_list_editor",
+                    column_config={
+                        "server_name": st.column_config.TextColumn("Server Name", required=True),
+                        "cpu_cores": st.column_config.NumberColumn("CPU Cores", min_value=1, max_value=128),
+                        "ram_gb": st.column_config.NumberColumn("RAM (GB)", min_value=1, max_value=1024),
+                        "storage_gb": st.column_config.NumberColumn("Storage (GB)", min_value=10),
+                        "peak_cpu_percent": st.column_config.NumberColumn("Peak CPU %", min_value=1, max_value=100),
+                        "peak_ram_percent": st.column_config.NumberColumn("Peak RAM %", min_value=1, max_value=100),
+                        "max_iops": st.column_config.NumberColumn("Max IOPS", min_value=100),
+                        "max_throughput_mbps": st.column_config.NumberColumn("Throughput MB/s", min_value=10),
+                        "database_engine": st.column_config.SelectboxColumn("DB Engine", 
+                                                                            options=["oracle-ee", "oracle-se", "mysql", "postgres", "sqlserver-ee"])
+                    }
+                )
+                
+                # Update session state with edited data
+                if not edited_df.equals(display_df):
+                    st.session_state.on_prem_servers = edited_df.to_dict('records')
+                    st.success("✅ Server list updated!")
+                
+                # Server list management
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    if st.button("🗑️ Clear All Servers", use_container_width=True):
+                        st.session_state.on_prem_servers = []
+                        st.session_state.bulk_upload_data = None
+                        st.session_state.bulk_results = {}
+                        st.success("✅ All servers cleared")
+                        st.rerun()
+                
+                with col2:
+                    # Export current list
+                    current_csv = pd.DataFrame(st.session_state.on_prem_servers).to_csv(index=False)
+                    st.download_button(
+                        label="📥 Export Server List",
+                        data=current_csv,
+                        file_name=f"server_list_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                
+                with col3:
+                    if st.button("🔄 Validate All Servers", use_container_width=True):
+                        validation_errors = []
+                        for i, server in enumerate(st.session_state.on_prem_servers):
+                            if not server.get('server_name'):
+                                validation_errors.append(f"Row {i+1}: Missing server name")
+                            if server.get('cpu_cores', 0) <= 0:
+                                validation_errors.append(f"Row {i+1}: Invalid CPU cores")
+                            if server.get('ram_gb', 0) <= 0:
+                                validation_errors.append(f"Row {i+1}: Invalid RAM")
+                            if server.get('storage_gb', 0) <= 0:
+                                validation_errors.append(f"Row {i+1}: Invalid storage")
+                        
+                        if validation_errors:
+                            st.error(f"❌ Validation errors found:")
+                            for error in validation_errors:
+                                st.write(f"• {error}")
+                        else:
+                            st.success("✅ All servers validated successfully!")
+                
+                with col4:
+                    # Show summary stats
+                    if st.button("📊 Show Summary", use_container_width=True):
+                        st.session_state.show_summary = not st.session_state.get('show_summary', False)
+                
+                # Summary statistics
+                if st.session_state.get('show_summary', False):
+                    st.subheader("📈 Server List Summary")
+                    
+                    total_cores = sum([server['cpu_cores'] for server in st.session_state.on_prem_servers])
+                    total_ram = sum([server['ram_gb'] for server in st.session_state.on_prem_servers])
+                    total_storage = sum([server['storage_gb'] for server in st.session_state.on_prem_servers])
+                    avg_cpu_util = sum([server['peak_cpu_percent'] for server in st.session_state.on_prem_servers]) / len(st.session_state.on_prem_servers)
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total CPU Cores", total_cores)
+                    
+                    with col2:
+                        st.metric("Total RAM (GB)", f"{total_ram:,}")
+                    
+                    with col3:
+                        st.metric("Total Storage (GB)", f"{total_storage:,}")
+                    
+                    with col4:
+                        st.metric("Avg CPU Utilization", f"{avg_cpu_util:.1f}%")
+                    
+                    # Engine distribution
+                    engine_counts = {}
+                    for server in st.session_state.on_prem_servers:
+                        engine = server['database_engine']
+                        engine_counts[engine] = engine_counts.get(engine, 0) + 1
+                    
+                    st.markdown("**Database Engine Distribution:**")
+                    for engine, count in engine_counts.items():
+                        st.write(f"• {engine}: {count} servers")
+
+                # Bulk Analysis Settings
+                st.subheader("⚙️ Bulk Analysis Settings")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    batch_size = st.number_input("Batch Size", min_value=1, max_value=10, value=3, help="Number of servers to process simultaneously")
+                    include_dev_environments = st.checkbox("Include DEV/TEST environments", value=False)
+                
+                with col2:
+                    export_individual_reports = st.checkbox("Export individual server reports", value=False)
+                    enable_parallel_processing = st.checkbox("Enable parallel processing", value=True)
+
+                # BULK ANALYSIS BUTTON - PROPERLY INDENTED
+                if st.button("🚀 Start Bulk Analysis", type="primary", use_container_width=True):
+                    # Create local calculator reference
+                    calculator = st.session_state.calculator
+                    
+                    # Safety check
+                    if not calculator:
+                        st.error("❌ Calculator not initialized. Please configure migration settings first.")
+                        st.stop()
+                    
+                    progress_bar = st.progress(0)
+                    status_placeholder = st.empty()
+                    results_placeholder = st.empty()
+                    
+                    bulk_results = {}
+                    servers = st.session_state.on_prem_servers
+                    total_servers = len(servers)
+                    
+                    # Initialize total_monthly_cost for AI insights calculation
+                    total_monthly_cost_for_ai_insights = 0 
+
+                    try:
+                        for i, server in enumerate(servers):
+                            # Update status for current server being analyzed
+                            status_placeholder.text(f"🔄 Analyzing {server['server_name']} ({i+1}/{total_servers})")
+                            
+                            try:
+                                inputs = {
+                                    "region": st.session_state.region,
+                                    "target_engine": st.session_state.target_engine,
+                                    "source_engine": server.get('database_engine', st.session_state.source_engine),
+                                    "deployment": st.session_state.deployment_option,
+                                    "storage_type": st.session_state.storage_type,
+                                    "on_prem_cores": server['cpu_cores'],
+                                    "peak_cpu_percent": server['peak_cpu_percent'],
+                                    "on_prem_ram_gb": server['ram_gb'],
+                                    "peak_ram_percent": server['peak_ram_percent'],
+                                    "storage_current_gb": server['storage_gb'],
+                                    "storage_growth_rate": 0.2,
+                                    "years": 3,
+                                    "enable_encryption": True,
+                                    "enable_perf_insights": True,
+                                    "enable_enhanced_monitoring": False,
+                                    "monthly_data_transfer_gb": 100,
+                                    "max_iops": server['max_iops'],
+                                    "max_throughput_mbps": server['max_throughput_mbps']
+                                }
+                                
+                                server_results = calculator.generate_comprehensive_recommendations(inputs)
+                                bulk_results[server['server_name']] = server_results
+                                
+                                # Accumulate cost for AI insights, only from successful analyses
+                                if 'error' not in server_results:
+                                    prod_result = server_results.get('PROD', list(server_results.values())[0])
+                                    if 'error' not in prod_result:
+                                        total_monthly_cost_for_ai_insights += safe_get(prod_result, 'total_cost', 0)
+
+                                # Show success status
+                                status_placeholder.success(f"✅ Completed {server['server_name']} ({i+1}/{total_servers})")
+
+                            except Exception as e:
+                                bulk_results[server['server_name']] = {'error': str(e)}
+                                st.warning(f"⚠️ Error analyzing {server['server_name']}: {e}")
+                                status_placeholder.error(f"❌ Failed {server['server_name']} ({i+1}/{total_servers})")
+                            
+                            # Update progress bar
+                            progress_bar.progress((i + 1) / total_servers)
+                            
+                            # Update results summary
+                            with results_placeholder.container():
+                                completed_count = i + 1
+                                successful_count = len([r for r in bulk_results.values() if 'error' not in r])
+                                failed_count = completed_count - successful_count
+                                
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Completed", f"{completed_count}/{total_servers}")
+                                with col2:
+                                    st.metric("Successful", successful_count)
+                                with col3:
+                                    st.metric("Failed", failed_count)
+                                
+                                # Show current progress percentage
+                                progress_pct = (completed_count / total_servers) * 100
+                                st.progress(progress_pct / 100, text=f"Overall Progress: {progress_pct:.1f}%")
+                            
+                            # Small delay to make progress visible
+                            time.sleep(0.5)
+                        
+                        st.session_state.bulk_results = bulk_results
+                        
+                        successful_analyses = len([r for r in bulk_results.values() if 'error' not in r])
+                        failed_analyses = total_servers - successful_analyses
+                        
+                        progress_bar.progress(1.0)
+                        status_placeholder.success(f"🎉 Bulk analysis complete! {successful_analyses} successful, {failed_analyses} failed")
+                        
+                        # Clear the intermediate results display
+                        results_placeholder.empty()
+                        
+                        # --- AI INSIGHTS GENERATION FOR BULK ANALYSIS ---
+                        if successful_analyses > 0 and calculator.ai_client:
+                            with st.spinner("🤖 Generating AI insights for bulk analysis..."):
+                                try:
+                                    # Aggregate all successful results for AI analysis
+                                    aggregated_results_for_ai = {}
+                                    for server_name, server_data in bulk_results.items():
+                                        if 'error' not in server_data:
+                                            # Get the PROD environment result, or first available result
+                                            if 'PROD' in server_data:
+                                                aggregated_results_for_ai[server_name] = server_data['PROD']
+                                            else:
+                                                # Get first non-error result
+                                                for env_key, env_result in server_data.items():
+                                                    if 'error' not in env_result:
+                                                        aggregated_results_for_ai[server_name] = env_result
+                                                        break
+
+                                    # Create input for the overall bulk AI insight
+                                    bulk_inputs_for_ai = {
+                                        "region": st.session_state.region,
+                                        "target_engine": st.session_state.target_engine,
+                                        "source_engine": st.session_state.source_engine,
+                                        "deployment": st.session_state.deployment_option,
+                                        "storage_type": st.session_state.storage_type,
+                                        "num_servers_analyzed": successful_analyses,
+                                        "total_monthly_cost": total_monthly_cost_for_ai_insights,
+                                        "analysis_mode": "bulk",
+                                        "servers_summary": {
+                                            "total_servers": len(st.session_state.on_prem_servers),
+                                            "successful_analyses": successful_analyses,
+                                            "failed_analyses": len(st.session_state.on_prem_servers) - successful_analyses
+                                        }
+                                    }
+
+                                    # Calculate averages safely
+                                    if successful_analyses > 0:
+                                        total_vcpus = 0
+                                        total_ram = 0
+                                        total_storage = 0
+                                        
+                                        for server_result in aggregated_results_for_ai.values():
+                                            if 'writer' in server_result:
+                                                total_vcpus += safe_get(server_result['writer'], 'actual_vCPUs', 0)
+                                                total_ram += safe_get(server_result['writer'], 'actual_RAM_GB', 0)
+                                            else:
+                                                total_vcpus += safe_get(server_result, 'actual_vCPUs', 0)
+                                                total_ram += safe_get(server_result, 'actual_RAM_GB', 0)
+                                            
+                                            total_storage += safe_get(server_result, 'storage_GB', 0)
+                                        
+                                        bulk_inputs_for_ai.update({
+                                            "avg_cpu_cores": total_vcpus / successful_analyses,
+                                            "avg_ram_gb": total_ram / successful_analyses,
+                                            "avg_storage_gb": total_storage / successful_analyses
+                                        })
+                                    
+                                    # Generate AI insights
+                                    bulk_ai_insights = asyncio.run(calculator.generate_ai_insights(aggregated_results_for_ai, bulk_inputs_for_ai))
+                                    st.session_state.ai_insights = bulk_ai_insights
+                                    st.success("✅ AI insights for bulk analysis generated!")
+                                    
+                                except Exception as e:
+                                    st.warning(f"AI insights generation for bulk failed: {e}")
+                                    st.code(traceback.format_exc())
+                                    st.session_state.ai_insights = None
+                                    
+                        elif successful_analyses == 0:
+                            st.info("No successful server analyses found; skipping AI insights generation for bulk.")
+                            st.session_state.ai_insights = None
+                        elif not calculator.ai_client:
+                            st.info("Anthropic API key not provided or AI client not ready; skipping AI insights generation.")
+                            st.session_state.ai_insights = None
+
+                        if successful_analyses > 0:
+                            st.subheader("📊 Bulk Analysis Results") 
+                            
+                            summary_fig = create_bulk_analysis_summary_chart(bulk_results)
+                            if summary_fig:
+                                st.plotly_chart(summary_fig, use_container_width=True)
+                            
+                            summary_data = []
+                            total_monthly_cost_display = 0
+                            
+                            for server_name, results in bulk_results.items():
+                                if 'error' not in results:
+                                    result = results.get('PROD', list(results.values())[0])
+                                    if 'error' not in result:
+                                        monthly_cost = safe_get(result, 'total_cost', 0)
+                                        total_monthly_cost_display += monthly_cost
+                                        
+                                        recommended_instance_type = ""
+                                        vcpus_display = 0
+                                        ram_gb_display = 0
+                                        if 'writer' in result:
+                                            writer_info = result['writer']
+                                            recommended_instance_type = safe_get_str(writer_info, 'instance_type', 'N/A')
+                                            vcpus_display = safe_get(writer_info, 'actual_vCPUs', 0)
+                                            ram_gb_display = safe_get(writer_info, 'actual_RAM_GB', 0)
+                                            if result['readers']:
+                                                recommended_instance_type += f" + {len(result['readers'])} Readers"
+                                        else:
+                                            recommended_instance_type = safe_get_str(result, 'instance_type', 'N/A')
+                                            vcpus_display = safe_get(result, 'actual_vCPUs', 0)
+                                            ram_gb_display = safe_get(result, 'actual_RAM_GB', 0)
+
+                                        summary_data.append({
+                                            'Server Name': server_name,
+                                            'Recommended Instance': recommended_instance_type,
+                                            'vCPUs': vcpus_display,
+                                            'RAM (GB)': ram_gb_display,
+                                            'Storage (GB)': safe_get(result, 'storage_GB', 0),
+                                            'Monthly Cost': f"${monthly_cost:,.2f}",
+                                            'Annual Cost': f"${monthly_cost * 12:,.2f}"
+                                        })
+                                else:
+                                    summary_data.append({
+                                        'Server Name': server_name,
+                                        'Recommended Instance': 'ERROR',
+                                        'vCPUs': 0,
+                                        'RAM (GB)': 0,
+                                        'Storage (GB)': 0,
+                                        'Monthly Cost': '$0.00',
+                                        'Annual Cost': f"Error: {results['error']}"
+                                    })
+                            
+                            summary_df = pd.DataFrame(summary_data)
+                            st.dataframe(summary_df, use_container_width=True)
+                            
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                st.metric("Total Monthly Cost", f"${total_monthly_cost_display:,.2f}")
+                            with col2:
+                                st.metric("Total Annual Cost", f"${total_monthly_cost_display * 12:,.2f}")
+                            with col3:
+                                avg_cost = total_monthly_cost_display / successful_analyses if successful_analyses > 0 else 0
+                                st.metric("Average Cost per Server", f"${avg_cost:,.2f}")
+                        
+                    except Exception as e:
+                        st.error(f"❌ Bulk analysis failed: {str(e)}")
+                        st.code(traceback.format_exc())
+
+            else:
+                # No servers configured yet
+                st.info("💡 No servers configured yet. Use the options above to add server specifications.")
+                
+                st.markdown("""
+                **Getting Started with Bulk Analysis:**
+                1. 📄 Upload a CSV/Excel file with your server specifications, OR
+                2. ✍️ Manually enter each server using the form above
+                3. 📊 Review and validate your server list
+                4. 🚀 Proceed to run the bulk analysis
+                """)
 # ================================
 # TAB 3: SIZING ANALYSIS
 # ================================
