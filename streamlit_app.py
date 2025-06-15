@@ -2702,7 +2702,7 @@ with tab2:
                     results_placeholder = st.empty()
                     
                     bulk_results = {}
-                    servers = st.session_state.on_prem_servers
+                    servers = st.session_state.on_prem_servers  # <-- ADD THIS LINE
                     total_servers = len(servers)
                     
                     # Initialize total_monthly_cost for AI insights calculation
